@@ -1,0 +1,763 @@
+* Configuration                                                    :noexport:
+** blog
+   #+title:
+   #+author:
+** ox-hugo settings
+   #+hugo_base_dir: ~/tactical-documentation/
+   #+hugo_section: post
+   #+hugo_weight: auto
+   #+hugo_auto_set_lastmod: t
+** Macros
+*** Sidenotes
+    Careful! You have to escape commas: =,= becomes =\,=
+
+    This defines how sidenotes work:
+    #+macro: sidenote <label class="margin-toggle sidenote-number"></label><span class="sidenote"> $1 </span>
+    In order to use it use:
+    #+begin_example
+      {{{sidenote(This is a sidenote.)}}}
+    #+end_example
+*** Marginnotes
+    The same as sidenotes
+    #+macro: marginnote </label><span class="marginnote"> $1 </span>
+
+*** Mathjax 
+    In order to enable Mathjax for a blog entry, we need to make sure
+    the mathjax partial is loaded. Enabling it on a per blog entry
+    base is better than loading it everytime because it is part of the
+    default footer. In order to do so we use a shortcode defined in
+    our theme.
+
+    #+macro: enable_mathjax {{< enableMathjax >}}
+
+    Of course you can also use the shortcode directly, but typing
+    ={{{enable_mathjax}}}= is faster than typing ={{< enableMathjax>}}=.
+** config.toml
+   The =config.toml= file I use currently contains the following:
+   #+begin_example 
+     baseURL = "https://tactical-documentation.github.io"
+     languageCode = "en-us"
+     title = "tactical-documentation"theme = "hugo-tacdoc-theme"
+
+     pygmentsstyle       = "manni"
+     pygmentscodefences  = true
+     pygmentsUseClassic = false              # Force use of chroma
+
+     # by adding this categories are disabled, tags are enough for now
+     [taxonomies]
+       tag = "tags"
+   #+end_example
+   
+* How to use this document
+  In order to use this document, we need to make sure that a few
+  things are set for each blog post:
+** =PROPERTY= drawer
+   Just an example, the most important part being to set the
+   =EXPORT_HUGO_CUSTOM_FRONT_MATTER= variable correctly, not sure if
+   this can be done any other way.
+   #+BEGIN_EXAMPLE
+   ,  :PROPERTIES:
+   ,  :EXPORT_FILE_NAME: filename-of-the-post
+   ,  :EXPORT_HUGO_CODE_FENCE: t
+   ,  :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"1999-01-01\""
+   ,  :END:
+   #+END_EXAMPLE
+** sidenotes
+   Careful! You have to escape commas: =,= becomes =\,=
+
+   In order to use the sidenotes in the blog, use the sidenote macro:
+   #+BEGIN_EXAMPLE
+     {{{sidenote(This is displayed at the side of the page.)}}}
+   #+END_EXAMPLE
+* Static Pages
+  This section contains the static pages of the blog, that appear in
+  the header, such as the about page, maybe more at some point in time
+** about
+   :PROPERTIES:
+   :EXPORT_FILE_NAME: about
+   :EXPORT_HUGO_SECTION: .
+   :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"\""
+   :END:
+
+   This page contains some general information about this blog, first
+   a short overview of this project, then a little FAQ-ish section
+   with stuff you might want to know about this site and finally there
+   is a small showcase of this hugo theme, that I've put together with
+   pretty much no background knowledge.
+
+   This project consists of three github repositories{{{sidenote(At
+   least until I get around to merging the theme and the org
+   repository so that the org file can be tangled in order to generate
+   the theme files.)}}}, [[https://github.com/tactical-documentation/tactical-documentation.github.io][one of them]] housing the files for this
+   statically linked site, [[https://github.com/tactical-documentation/hugo-tacdoc-theme][another one]] containing the theme for this
+   site and the [[https://github.com/tactical-documentation/org][third one]] containing the org source of this site. I
+   use [[https://www.gnu.org/software/emacs/][emacs]] to write this content using the amazing [[https://orgmode.org/][org]] file format,
+   [[https://github.com/kaushalmodi/ox-hugo][ox-hugo]] to export the content into whatever file structure [[https://gohugo.io][hugo]]
+   uses to generate this statically linked site.
+**** Disclaimer
+     As far as I understand there might be a few things that I am
+     obliged to mention, so here they are:
+     - I do not assume any kind of responsibility for anything you do,
+       think, understand or feel before, after or during the time you
+       read any of this content. I just want a place to write stuff
+       down and I sincerly hope all people, who get to read it just
+       have a nice time reading it or benefit from what I write down.
+     - Most of the content I will put on this site is probably going
+       to be fairly technical, you should not under any circumstaces
+       try any of it out if you don't know exactly what you are
+       doing. Even then you should always check if the information you
+       read is correct or applicable to your personal case. I really
+       hope that whatever I write down might help you solve a problem
+       or that you just have a great time reading it, but just in case
+       you should always try to check if what you read is actually
+       correct.
+     - As the times, when the internet didn't forget anything seem to
+       have passed, there is another topic I might have to mention: I
+       link to other sources and I am not responsible for whatever
+       happens when you click on those links or where-ever these links
+       might or might not lead, because a site has been remodeled,
+       moved, died or been replaced by another one or anything
+       else. You shall not hold me accountable to anything, when you
+       click on a link on this site. I will try to kepp dead links up
+       to date, but it really is not a priority or something that I do
+       actively. Also since this is a very simple static page,there is
+       no intermediate warning page that makes you aware of the fact
+       that you are about to leave this site. If leaving this site
+       using a link is something that concerns you, don't follow any
+       links on this site.
+**** Privacy
+     I do not collect any of your private data. I'm solely a user of
+     the github pages service, where this site is hosted. In case you
+     have any concerns you might have as to how your private data is
+     collected, stored or used, you should get in touch with github
+     (whose very detailed privacy statement is at the time I'm writing
+     this available [[https://help.github.com/en/articles/github-privacy-statement][here]]).
+**** Where is this blog hosted?
+     It is hosted on github pages, they have a privacy statement,
+     which at the time I'm writing this resides [[https://help.github.com/en/articles/github-privacy-statement][here]] and where you can
+     in detail read about everything they do with data. This site will
+     not use any external services besides github pages, there is no
+     commenting system and no analytics script running. This is just a
+     simple static site with information on it.
+**** What services are used when this site is accessed?
+     I guess this part might be fairly interesting to some people, so
+     here it is:
+
+     The site does not use any external services, there are no ads or
+     cookies. You can look at the source of the hugo theme [[https://github.com/tactical-documentation/hugo-tacdoc-theme][here]] and at
+     the source of this site [[https://github.com/tactical-documentation/tactical-documentation.github.io][here]]. A bit of CSS is used for styling,
+     you can take a look at it at the theme repository.
+
+     For the most part, no Javascript is used on this site, with the
+     sole exception currently being [[https://www.mathjax.org/][Mathjax]], which is used to display
+     rendered version of [[https://www.latex-project.org/][LaTeX]] code on some of the posts
+     {{{sidenote(this one included\, due to the little theme showcase
+     below)}}}. The Mathjax files used in this blog are not hosted by
+     an external CDN, instead they are also hosted with the rest of
+     the static files and reside in the repository of this site.
+
+     Additional Javascript may be added at a later point of time,
+     however I'll only add Javascript in order to enable missing
+     functionality, such as Mathjax for the purpose of rendering LaTeX
+     formulas. If I do so I'll add the necessary files to the source
+     repo as well as to avoid generating any external
+     connections. I'll also try to remember to append such information
+     to this page.
+
+     If you want to access the content of this site, without a browser
+     or in text form, you can always just grab a copy of the
+     repository containing the org source of the content and read it
+     in your favourite pager or text editor or just try to rebuild the
+     site locally and view it served from your own machine (see the
+     next section for pointers on how to do so).
+**** How I build this site?
+     First we have to create a new Hugo project, we can follow the
+     getting started part of their documentation for this.
+
+     Once the project has been created, we can add our theme in the
+     theme directory, make sure the =config.toml= {{{sidenote(I am
+     actually keeping my config.toml in my org repo\, together with
+     the rest of the content\, so keeping any additional repository
+     containing files that hugo has generated would be pretty
+     pointless as really only the public/ part of this repository is
+     worth keeping.)}}} is actually using it and run =hugo= from within the
+     project folder to create the =public/= directory.
+
+     When it comes to the theme, we might want to update the version
+     of mathjax it is using and we might want to make sure the
+     mathjax-fonts are available inside the =static/fonts/= directory of
+     the theme, although the missing fonts error I encountered when
+     building this locally is something that went away after a rebuild
+     and without having to supply the fonts, so this part might not be
+     necessary.
+
+     When that's done, we can focus on the content: open up the org
+     file in emacs, add some content and =C-c C-e H A=, then head over
+     to the hugo project, run =hugo= and check if it looks as expected.
+*** Theme Preview
+ # enable Mathjax for this post:
+ {{{enable_mathjax}}}
+
+ This part of the page is a bit of a showcase for the theme used in
+ this blog, I've pretty much cargo-culted it from various sources,
+ including the following hugo themes:
+ - [[https://github.com/davidhampgonsalves/hugo-black-and-light-theme][black-and-light]]
+ - [[https://github.com/alanorth/hugo-theme-tufte-css][hugo-theme-tufte-css]]
+ - [[https://github.com/bobfp/hugo-slick][slick]]
+
+ A few interesting things from the org file of the ox-hugo page:
+
+ Testing a sidenote{{{sidenote(This text should appear at the side of
+ the text)}}} inside a block of text, which contains another
+ sidenote{{{sidenote(which is probably also displayed at the side of
+ the page)}}}.
+
+ There are also margin notes{{{marginnote(Note how this shouldn't be numbered.)}}}.
+
+ So here is an example block:
+ #+BEGIN_EXAMPLE
+   #+setupfile: doc-setupfile.org
+
+   #+macro: imageclick [[file:./static/images/$1][file:/images/$1]]
+   #+macro: doc [[/doc/$1/$2][$3]]
+ #+END_EXAMPLE
+
+ Also how do quotes look like?
+ #+BEGIN_QUOTE
+   These things happened. They were glorious and they changed the
+   world... and then we fucked up the end game.
+   - C.W.
+ #+END_QUOTE
+
+ How about Footnotes [fn::This is a footnote]?
+
+ Images:
+ #+caption: This is an image.
+ [[./img/htop.png]]
+
+ Lists:
+ - item
+ - another item
+   - item
+   - bla
+ - bla
+
+ Tables:
+ #+caption: This is a caption
+ | This | is | a | Table |
+ |------+----+---+-------|
+ |    1 |  2 | 3 |     4 |
+ |    5 |  6 | 7 |     8 |
+
+ Task Lists
+ - [ ] task
+ - [X] task
+ - [ ] task
+ - [X] task
+ - [ ] task
+
+ Formulas using Mathjax $\log_{ab}^{x} = x * \frac{2}{5}$
+
+ Next lets look at source code blocks:
+
+ Python:
+ #+BEGIN_SRC python
+   for i in bla:
+     print i;
+ #+END_SRC
+
+ Bourne shell:
+ #+BEGIN_SRC sh
+   for i in $(ls ~/some/path | grep foo)
+   do 
+     echo -e "\n Here is some output : $i"
+   done
+ #+END_SRC
+
+ Bash: 
+ #+BEGIN_SRC bash
+   for i in $(ls ~/some/path | grep foo)
+   do 
+     echo -e "\n Here is some output : $i"
+   done
+ #+END_SRC
+
+ HTML:
+ #+BEGIN_SRC html
+   <head> Bla </head>
+   <body> Bleh </body>
+ #+END_SRC
+
+ C++:
+ #+BEGIN_SRC c++
+   #import <std.h>
+
+   void main () {
+     sdt::cout << "bla" << var << std::endl;
+   }
+ #+END_SRC
+
+ emacs-lisp:
+ #+BEGIN_SRC emacs-lisp
+   (defun a-function (a-list)
+       "This makes no sense"
+     (interactive)
+     (dolist (item a-list)
+       (print item)))
+ #+END_SRC
+** src
+   :PROPERTIES:
+   :EXPORT_FILE_NAME: src
+   :EXPORT_HUGO_SECTION: .
+   :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"\""
+   :END:
+   The source of this site is available on github:
+   1. [[https://github.com/tactical-documentation/tactical-documentation.github.io][tactical-documentation.github.io]]::this is the repository housing
+      all of the site you're looking at right now.
+   2. [[https://github.com/tactical-documentation/hugo-tacdoc-theme][hugo-tacdoc-theme]]::this contains the theme this site is using.
+   3. [[https://github.com/tactical-documentation/org][org]]::this is the link to the actual content of this site written
+      in org.
+     
+   The site is generated using [[https://www.gnu.org/software/emacs/][emacs]], [[https://orgmode.org/][orgmode]], [[https://github.com/kaushalmodi/ox-hugo][ox-hugo]] and [[https://gohugo.io/][hugo]].
+* Posts
+** Proxmox VE 6 Setup: ZFS, LUKS, systemd-boot and Dropbear
+   :PROPERTIES:
+   :EXPORT_FILE_NAME: proxmoxve6-zfs-luks-systemdboot-dropbear
+   :EXPORT_HUGO_TAGS: proxmox zfs luks systemd-boot dropbear
+   :EXPORT_HUGO_CODE_FENCE: t
+   :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"2019-08-23\""
+   :END:
+   This describes how to set up a fully encrypted Proxmox VE 6 host
+   with ZFS root and unlocking it remotely using the dropbear ssh
+   server. Also it describes how you can do that, while keeping
+   systemd-boot and thus also the pve tooling intact{{{sidenote(I'm
+   not sure if the pve tooling still works if you replace systemd-boot
+   with grub\, which seems to be the common solution to setting up
+   this kind of setup\,maybe it does)}}}.
+*** Overview
+    We are going to do the following:
+    1. Install Proxmox VE 6 on our machine
+    2. Minimally configure the Installation
+    3. Encrypt the Installation:
+       1. Remove a Disk from the ZFS-Pool
+       2. Encrypt the Disk with LUKS
+       3. Add it back to the ZFS Pool
+       4. Repeat until all disks are encrypted
+    4. Set up Dropbear and Systemd-boot to enable remote unlocking
+*** Prerequisites
+    There really only is one prerequisite apart from having a machine
+    you want to install Proxmox onto: You need a second harddrive,
+    which we will setup in a ZFS RAID1 configuration. If you don't
+    want to have your root devices mirrored, you will still need a
+    second drive that you can use as a temporary mirrored root device,
+    otherwise you'd have to install and set up an encrypted debian and
+    then install proxmox on top of that.
+
+    Apart from that I'll assume that you are probably fairly familiar
+    with how full disk encryption works on linux systems, if not you
+    might want to read up on that before you start messing around with
+    any hardware. Please don't try this out on a production system,
+    if you don't exactly know what you're doing.
+*** Installing Proxmox VE 6
+    The only thing you have to make sure is to set up the ZFS RAID 1
+    during the installation. The rest should be pretty much
+    straight-forward.
+*** Minimal post-installation
+    For some odd reason =PATH= in a regular shell is different from =PATH=
+    in the javascript terminal from the webinterface. You might want
+    to take care of that:
+    #+begin_src bash
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    #+end_src
+
+    Remove the subscription popup notice ([[https://johnscs.com/remove-proxmox51-subscription-notice/][source]]):
+    #+begin_src bash
+      sed -i.bak "s/data.status !== 'Active'/false/g" /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js && systemctl restart pveproxy.service
+    #+end_src
+
+    Set up the community repositories:
+    #+begin_src bash
+      rm /etc/apt/sources.list.d/pve-enterprise.list
+      echo 'deb http://download.proxmox.com/debian/pve buster pve-no-subscription' > pve-community.list
+    #+end_src
+
+    Update the host:
+    #+begin_src bash
+      apt update
+      apt upgrade
+    #+end_src
+*** Encrypt your installation
+    This is partly taken over from [[https://forums.servethehome.com/index.php?threads/proxmox-zfs-encryption-guide-work-in-progress.23004/#post-215138][this wonderful post]]{{{sidenote(The
+    GRUB_ENABLE_CRYPTODISK option that is mentioned in the [[https://forums.servethehome.com/index.php?threads/proxmox-zfs-encryption-guide-work-in-progress.23004/#post-215138][forum post]]
+    does not apply here\, since the boot partition is not
+    encrypted. If you want this level of security\, then this is
+    probably not the right guide for you. Also from my understanding
+    encrypting the boot partition means that you can't use dropbear to
+    unlock the system remotely since nothing has booted so far. It is
+    a pretty nice way to set up fully encrypted laptops though\, so
+    you should definitely look into this if you haven't already!)}}}.
+
+    Right after the installation the host should look similiar to this
+    (=lsblk=):
+    #+begin_example bash
+      NAME            MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
+      sda               8:0    0 465.8G  0 disk
+      ├─sda1            8:1    0  1007K  0 part
+      ├─sda2            8:2    0   512M  0 part
+      └─sda3            8:3    0 465.3G  0 part
+      sdb               8:16   0 931.5G  0 disk
+      sdc               8:32   0 931.5G  0 disk
+      sdd               8:48   0 465.8G  0 disk
+      ├─sdd1            8:49   0  1007K  0 part
+      ├─sdd2            8:50   0   512M  0 part
+      └─sdd3            8:51   0 465.3G  0 part
+    #+end_example
+    The third partition of both harddrives contains our installation,
+    the first and second are the boot and efi partitions.
+
+    =zpool status= should return something like this:
+    #+begin_example bash
+              NAME             STATE     READ WRITE CKSUM
+              rpool            ONLINE       0     0     0
+                mirror-0       ONLINE       0     0     0
+                  ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3  ONLINE       0     0     0
+                  ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3        ONLINE       0     0     0
+    #+end_example
+
+    You might want to install =cryptsetup= at this point:
+    #+begin_src bash
+      apt install cryptsetup
+    #+end_src
+
+    Remove the first partition from =rpool=, then encrypt it, mount it
+    to =/dev/mapper/cryptrpool1= and reattach it to =rpool=:
+    #+begin_src bash
+      zpool detach rpool ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3
+      cryptsetup luksFormat /dev/disk/by-id/ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3
+      cryptsetup luksOpen /dev/disk/by-id/ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3 cryptrpool1
+      zpool attach rpool ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3 cryptrpool1
+    #+end_src
+
+    Wait until the =scan= line of =zpool status= displays that the drive
+    has been resilvered successfully. You should see something
+    similiar to this:
+    #+begin_example
+      scan: resilvered 1022M in 0 days 00:00:04 with 0 errors on Wed Aug 21 17:27:55 2019
+    #+end_example
+
+    Now repeat this step with the other drive:
+    #+begin_src bash
+
+      zpool detach rpool ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3
+      cryptsetup luksFormat /dev/disk/by-id/ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3
+      cryptsetup luksOpen /dev/disk/by-id/ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3 cryptrpool2
+      zpool attach rpool cryptrpool1 cryptrpool2
+    #+end_src
+
+    At this point =lsblk= should output something like this:
+    #+begin_example bash                                                                                                                                                                                                                 
+      NAME            MAJ:MIN RM   SIZE RO TYPE  MOUNTPOINT
+      sda               8:0    0 465.8G  0 disk  
+      ├─sda1            8:1    0  1007K  0 part  
+      ├─sda2            8:2    0   512M  0 part  
+      └─sda3            8:3    0 465.3G  0 part  
+        └─cryptrpool1 253:0    0 465.3G  0 crypt 
+      sdb               8:16   0 931.5G  0 disk  
+      sdc               8:32   0 931.5G  0 disk  
+      sdd               8:48   0 465.8G  0 disk  
+      ├─sdd1            8:49   0  1007K  0 part  
+      ├─sdd2            8:50   0   512M  0 part  
+      └─sdd3            8:51   0 465.3G  0 part  
+        └─cryptrpool2 253:1    0 465.3G  0 crypt
+    #+end_example                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                         
+    And =zpool status= should return something like this:                                                                                                                                                                                      
+    #+begin_example bash                                                                                                                                                                                                                 
+      NAME             STATE     READ WRITE CKSUM
+      rpool            ONLINE       0     0     0
+        mirror-0       ONLINE       0     0     0
+          cryptrpool1  ONLINE       0     0     0
+          cryptrpool2  ONLINE       0     0     0
+    #+end_example    
+
+
+    Next we want to set up =/etc/crypttab=, use =blkid= to get the
+    =PARTUUID= from both harddrives:
+    #+begin_src bash
+      blkid -s PARTUUID -o value /dev/disk/by-id/ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3
+      blkid -s PARTUUID -o value /dev/disk/by-id/ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3
+    #+end_src
+
+    Then add them to =/etc/crypttab= {{{sidenote(=caliban= is the name of my proxmox host.)}}}:
+    #+begin_example
+      root@caliban:~# cat /etc/crypttab
+      # <target name> <source device>                                <key file>      <options>
+        cryptrpool1   PARTUUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX  none            luks,discard,initramfs
+        cryptrpool2   PARTUUID=YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY  none            luks,discard,initramfs
+    #+end_example
+
+    Then update the initramfs and make sure it is put on the boot
+    partition (this is where we deviate from the forum post I've linked
+    above):
+    #+begin_src bash
+      update-initramfs -u -k all
+      pve-efiboot-tool refresh
+    #+end_src
+    In case you're wondering at this point, yes I'm also getting the
+    =cryptsetup= error message on running =update-initramfs=, it still works
+    though:
+    #+begin_example
+      cryptsetup: ERROR: Couldn't resolve device rpool/ROOT/pve-1
+      cryptsetup: WARNING: Couldn't determine root device
+    #+end_example
+
+    Now you should be able to reboot and unlock the ZFS partitions by
+    entering the passphrase.
+*** Setting up Dropbear to remotely unlock the partition
+    Now to the fun part! Since we aren't using =grub= here, we have to take
+    a few different steps from what we usually do in this kind of
+    setup.
+
+    Here are a few interesting links you might want to look into as well:
+    - [[https://www.pbworks.net/ubuntu-guide-dropbear-ssh-server-to-unlock-luks-encrypted-pc/][This]] nicely explains how to use the keys Dropbear already generates on
+      install instead of recreating them.
+    - The freedesktop page on [[https://www.freedesktop.org/wiki/Software/systemd/systemd-boot/][systemd-boot]]
+    - [[https://adfinis-sygroup.ch/en/blog/decrypt-luks-devices-remotely-via-dropbear-ssh/][This little article]] on setting up =archlinux= with =dropbear= does
+      not fully apply to our Proxmox case, but it gives enough
+      information on how we can tell =systemd-boot= to tell the kernel
+      to start with the options we want{{{sidenote(unlike the article
+      states\, we need to use the udev name for assigning the IP and I
+      was getting error messages\, when supplying nameserver IPs)}}}.
+
+    First install =dropbear= and =busybox=:
+    #+begin_src bash
+      apt install dropbear busybox
+    #+end_src
+
+    In =/etc/initramfs-tools/initramfs.conf= enable busybox:
+    #+begin_example
+      root@caliban:~# cat /etc/initramfs-tools/initramfs.conf | grep ^BUSYBOX
+      BUSYBOX=y
+    #+end_example
+
+    Then convert the dropbear keys:
+    #+begin_src bash
+      cd /etc/dropbear-initramfs/
+      /usr/lib/dropbear/dropbearconvert dropbear openssh dropbear_rsa_host_key id_rsa
+      dropbearkey -y -f dropbear_rsa_host_key | grep "^ssh-rsa " > id_rsa.pub
+    #+end_src
+
+    And add your public key to the authorized keys:
+    #+begin_src bash
+      vi /etc/dropbear-initramfs/authorized_keys
+    #+end_src
+
+    Make sure =dropbear= starts by toggling the =NO_START= value in
+    =/etc/default/dropbear=.
+    #+begin_example 
+      root@caliban:~# cat /etc/default/dropbear | grep ^NO_START
+      NO_START=0
+    #+end_example
+
+    Finally configure =dropbear= to use a different Port than 22 in order to
+    avoid getting the MITM warning, by changing the =DROPBEAR_OPTIONS= value
+    in /etc/dropbear-initramfs/config:
+    #+begin_example
+      root@caliban:~# cat /etc/dropbear-initramfs/config | grep ^DROPBEAR_OPTIONS
+      DROPBEAR_OPTIONS="-p 12345"
+    #+end_example
+
+    You can then set up two entries in your =~/.ssh/config=:
+    #+begin_example
+      $ cat ~/.ssh/config
+      Host *
+      ServerAliveInterval 120
+
+      Host unlock_caliban
+        Hostname 1.2.3.4
+        User root
+        Port 2222
+
+      Host caliban
+        Hostname 1.2.3.4
+        Port 22
+    #+end_example
+    At this point I noticed, that only the third partition of both of the
+    harddrives with the rpool were mounted. When mounting a boot
+    partition, I found that there were systemd-boot configuration files,
+    but they seemed to be autogenerated by Proxmox, whenever
+    =pve-efiboot-tool refresh= was run. So I looked into
+    =/usr/sbin/pve-efiboot-tool=, and followed the code until I came out in
+    =/etc/kernel/postinst.d/zz-pve-efiboot=, which contains the code that
+    generates the systemd-boot configuration files:
+    #+begin_src bash
+      # [...]
+      for kver in ${BOOT_KVERS}; do
+
+          linux_image="/boot/vmlinuz-${kver}"
+          initrd="/boot/initrd.img-${kver}"
+
+          if [ ! -f "${linux_image}" ]; then
+              warn "No linux-image ${linux_image} found - skipping"
+              continue
+          fi
+          if [ ! -f "${initrd}" ]; then
+              warn "No initrd-image ${initrd} found - skipping"
+              continue
+          fi
+
+          warn "  Copying kernel and creating boot-entry for ${kver}"
+          KERNEL_ESP_DIR="${PMX_ESP_DIR}/${kver}"
+          KERNEL_LIVE_DIR="${esp}/${KERNEL_ESP_DIR}"
+          mkdir -p "${KERNEL_LIVE_DIR}"
+          cp -u --preserve=timestamps "${linux_image}" "${KERNEL_LIVE_DIR}/"
+          cp -u --preserve=timestamps "${initrd}" "${KERNEL_LIVE_DIR}/"
+
+          # create loader entry
+          cat > "${esp}/loader/entries/proxmox-${kver}.conf" <<- EOF
+                  title    ${LOADER_TITLE}
+                  version  ${kver}
+                  options  ${CMDLINE}
+                  linux    /${KERNEL_ESP_DIR}/vmlinuz-${kver}
+                  initrd   /${KERNEL_ESP_DIR}/initrd.img-${kver}
+          EOF
+      done
+      # [...]
+    #+end_src
+    For us, the cat part is especially interesting: the =CMDLINE= variable
+    in the line beginning with "=options=" contains the boot options for the
+    Linux kernel. This variable is assigned in the same file:
+    #+begin_src bash
+      # [...]
+      if [ -f /etc/kernel/cmdline ]; then
+        CMDLINE="$(cat /etc/kernel/cmdline)"
+      else
+        warn "No /etc/kernel/cmdline found - falling back to /proc/cmdline"
+        CMDLINE="$(cat /proc/cmdline)"
+      fi
+      # [...]
+    #+end_src
+    Apparently =/etc/kernel/cmdline= is the place where Proxmox stores it's
+    boot options. The file contains one single line:
+    #+begin_example 
+      root=ZFS=rpool/ROOT/pve-1 boot=zfs
+    #+end_example
+    After finding the =/etc/kernel/cmdline= file, I did a bit of searching
+    and according to the Proxmox [[https://pve.proxmox.com/pve-docs/pve-admin-guide.html#sysboot_edit_kernel_cmdline][documentation]], it is actually the
+    apropriate file to change in this case.
+
+    Now that we have identified the file we can use to configure our
+    kernel options, there are two things we want to add:
+    1. we want to make sure the network interface comes up so that we can
+       ssh into the initramfs, we will use the =ip= option for that. It uses
+       the following format (look [[https://www.kernel.org/doc/Documentation/filesystems/nfs/nfsroot.txt][here]] for further reading):
+       #+begin_example
+         ip=<client-ip>:<server-ip>:<gw-ip>:<netmask>:<hostname>:<device>:<autoconf>:
+       <dns0-ip>:<dns1-ip>:<ntp0-ip>:
+       #+end_example
+       I omitted everything after autoconf, something like this works for
+       me:
+       #+begin_example
+         ip=1.2.3.4::1.2.3.1:255.255.255.0:caliban:enpXsY:none:
+       #+end_example
+    2. also we have to tell the kernel which devices the cryptodevices are
+       that we want to unlock, which is done using the =cryptodevice= option
+       (here we have to supply the PARTUUIDs for both of our harddrives):
+       #+begin_example
+         cryptdevice=UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX cryptdevice=UUID=YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY
+       #+end_example
+
+    The whole content of =/etc/kernel/cmdline= looks like this:
+    #+begin_example
+      ip=1.2.3.4::1.2.3.1:255.255.255.0:caliban:enpXsY:none: cryptdevice=UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX cryptdevice=UUID=YYYYYYYY-YYYY-YYYY-YYYY-YYYYYYYYYYYY root=ZFS=rpool/ROOT/pve-1 boot=zfs
+    #+end_example
+
+    The last thing to do is to:
+    #+begin_src bash
+      update-initramfs -u -k all
+      pve-efiboot-tool refresh
+    #+end_src
+
+    Now you should be able to reboot your machine and ssh into the
+    busybox on the port you just configured for =dropbear=. From there
+    you can unlock the drives by running something like
+    this{{{sidenote(You'll have to input it twice since you have two
+    encrypted drives)}}}:
+    #+begin_example bash
+      echo -n "password" > /lib/cryptsetup/passfifo
+    #+end_example
+    Or:
+    #+begin_example bash
+      /lib/cryptsetup/askpass "password: " > /lib/cryptsetup/passfifo
+    #+end_example
+
+    Or you can also use the =cryptroot-unlock= script that is preinstalled
+    already, which also prompts you to enter the password twice.
+
+    If you're lazy, you can also use put the following script into
+    =/etc/initramfs-tools/hooks= and make it executable. I basically
+    merged the above example of using =/lib/cryptsetup/askpass= with a
+    version of a unlock script I had lying around, it looks like it
+    might have been from this [[https://gist.github.com/gusennan/712d6e81f5cf9489bd9f][gist]]. It asks you for a passphrase and
+    then uses echo to write it into =/lib/cryptsetup/passfifo= twice
+    (since I use 2 harddrives) with one second delay in between, then
+    kills the session so the system can come up{{{sidenote( I
+    noticed\, that /etc/motd\, which contains instructions on how to
+    unlock your drive is not displayed in the busybox
+    session.)}}}. You probably shouldn't use it, but it seems to work
+    for me:
+    #+begin_src bash
+      #!/bin/sh
+
+      PREREQ="dropbear"
+
+      prereqs() {
+          echo "$PREREQ"
+      }
+
+      case "$1" in
+          prereqs)
+              prereqs
+              exit 0
+              ;;
+      esac
+
+      . "${CONFDIR}/initramfs.conf"
+      . /usr/share/initramfs-tools/hook-functions
+
+      if [ "${DROPBEAR}" != "n" ] && [ -r "/etc/crypttab" ] ; then
+
+          cat > "${DESTDIR}/bin/unlock" << EOF
+      #!/bin/sh
+      unlock_devices() {
+        pw="\$(/lib/cryptsetup/askpass "password: ")"
+        echo -n \$pw > /lib/cryptsetup/passfifo
+        sleep 1
+        echo -n \$pw > /lib/cryptsetup/passfifo
+      }
+      if unlock_devices; then
+      # kill \`ps | grep cryptroot | grep -v "grep" | awk '{print \$1}'\`
+      # following line kill the remote shell right after the passphrase has
+      # been entered.
+      kill -9 \`ps | grep "\-sh" | grep -v "grep" | awk '{print \$1}'\`
+      exit 0
+      fi
+      exit 1
+      EOF
+
+          chmod 755 "${DESTDIR}/bin/unlock"
+
+          mkdir -p "${DESTDIR}/lib/unlock"
+          cat > "${DESTDIR}/lib/unlock/plymouth" << EOF
+      #!/bin/sh
+      [ "\$1" == "--ping" ] && exit 1
+      /bin/plymouth "\$@"
+      EOF
+
+          chmod 755 "${DESTDIR}/lib/unlock/plymouth"
+
+          echo To unlock root-partition run "unlock" >> ${DESTDIR}/etc/motd
+      fi
+    #+end_src
+    That's pretty much all of it, you can now start enjoying remote
+    reboots on your freshly encrypted Proxmox host.
