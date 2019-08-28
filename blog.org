@@ -320,7 +320,7 @@
      
    The site is generated using [[https://www.gnu.org/software/emacs/][emacs]], [[https://orgmode.org/][orgmode]], [[https://github.com/kaushalmodi/ox-hugo][ox-hugo]] and [[https://gohugo.io/][hugo]].
 * Posts
-** Proxmox VE 6 Setup: ZFS, LUKS, systemd-boot and Dropbear
+** Encrypting Proxmox VE 6: ZFS, LUKS, systemd-boot and Dropbear
    :PROPERTIES:
    :EXPORT_FILE_NAME: proxmoxve6-zfs-luks-systemdboot-dropbear
    :EXPORT_HUGO_TAGS: proxmox zfs luks systemd-boot dropbear
@@ -367,7 +367,7 @@
     in the javascript terminal from the webinterface. You might want
     to take care of that:
     #+begin_src bash
-      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> ~/.bashrc
     #+end_src
 
     Remove the subscription popup notice ([[https://johnscs.com/remove-proxmox51-subscription-notice/][source]]):
@@ -761,3 +761,1011 @@
     #+end_src
     That's pretty much all of it, you can now start enjoying remote
     reboots on your freshly encrypted Proxmox host.
+** Proof of Concept: Adding Boot Environments to Proxmox VE 6
+   :PROPERTIES:
+   :EXPORT_FILE_NAME: poc-proxmox-and-boot-environments
+   :EXPORT_HUGO_TAGS: proxmox zfs systemd-boot "boot environments"
+   :EXPORT_HUGO_CODE_FENCE: t
+   :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"2019-08-28\""
+   :END:
+   Dear Reader, this time I would like to invite you onto a small
+   journey: To boldly go where no man has gone
+   before{{{sidenote(Alright\, that's not true\, but I think it's the
+   first time someone documents this kind of thing in the context of
+   Proxmox)}}}. We're about to embark on a journey to make your Proxmox
+   host quite literally immortal. Also since what we are essentially
+   doing here is only a Proof of concept, you probably shouldn't use it
+   in production, but as it's really amazing, so you might want to try
+   it out in a test environment.
+
+   In this article we are going to take a closer look at how Proxmox
+   sets up the =ESP= {{{sidenote(EFI Systems Partition)}}} for
+   =systemd-boot= and how we can adapt this process to support =boot
+   environments=. Also this is going to be a long one, so you might want
+   to grab a cup of coffee and some snacks to eat {{{marginnote(And
+   maybe start installing a Proxmox VE 6 VM with ZFS\, because if boot
+   environments are still new to you\, at the point when you've read
+   about halfway through this post\, you will be eager to get your
+   hands dirty and try this out for yourself)}}}.
+*** Overview
+    - What are Boot Environments?
+      - Boot Environments on Linux
+    - Poking around in Proxmox
+      - The Proxmox ZFS Layout
+      - The Boot Preparation
+      - A Simple Proof of Concept
+    - From one Proof of Concept to Another
+      - Sidenote: The Proxmox ESP Size
+      - =zedenv=: A Boot Environment Manager
+      - =systemd-boot= and the EFI System Partitions
+      - Making =zedenv= and Proxmox play well together
+    - Conclusion and Future Work
+*** What are Boot Environments?
+    Boot environments are a truly amazing feature, which originated
+    somewhere in the Solaris/Illumos ecosystem{{{sidenote(They have
+    literally been around for ages\, I'm not quite sure at which point
+    in time they were introduced\, but you can finde evidence [[https://books.google.com/books?id=8vrwjLsPkgwC&pg=PA109][at
+    archeological digsites]] dating them back to at least 2003.)}}} and
+    has since been adapted by other operating systems, such as FreeBSD,
+    DragonflyBSD and others. The concept is actually quite simple:
+
+    #+begin_quote
+    A boot environment is a bootable Oracle Solaris environment
+    consisting of a root dataset and, optionally, other datasets
+    mounted underneath it. Exactly one boot environment can be active
+    at a time.
+    - [[https://docs.oracle.com/cd/E23824_01/html/E21801/index.html][Oracle Solaris 11 Information Library]]
+    #+end_quote
+
+    In my own words, I would describe boot environments as snapshots of
+    a [partial] system, which can booted from (that is when a Boot
+    Environment is active) or be mounted at runtime (by the same
+    system).
+
+    This enables a bunch of very interesting use-cases:
+    - Rollbacks: This might not seem to be a pretty back deal at first,
+      but once you realize that even after a major OS version upgrade,
+      when something is suddenly broken, the previous version is just a
+      reboot away.
+    - You can create bootable system snapshots on your bare metal
+      machines, not only on your virtual machines.
+    - You can choose between creating a new boot environment to save
+      the current systems state before updating or create a new boot
+      environment, chroot into it, upgrade and reboot into a freshly
+      upgraded system.
+    - You can quite literally take your work home if you like, by
+      creating a boot environment and **drum-roll** taking it home. You
+      you can of course also use this in order to create a virtual
+      machine, container, jail or zone of your system in order to test
+      something new or for forensic purposes.
+
+    Are you hooked yet? Good, you really should be. If you're not
+    hooked, read till the end of the next section, you will
+    be. {{{marginnote(If you're interested in boot environments\, I
+    would suggest\, you take a look at vermadens [[https://vermaden.files.wordpress.com/2018/07/pbug-zfs-boot-environments-2018-07-30.pdf][presentation on ZFS
+    boot environments]]\, or generally searching a bit on the web for
+    articles about Boot Environments on other unix systems\,
+    particularly there is quite a bit to be read on FreeBSD\, which
+    recently adopted them and which is far more in depth and better
+    explained than what I'll probably write down here.)}}}
+**** Boot Environments on Linux
+     While other operating systems have happily adapted boot
+     environments, there is surprisingly{{{sidenote(Or maybe not so
+     surprisingly\, if you remember how long zones and jails have been
+     a thing\, while linux just recently started doing containers. At
+     least there's still Windows to compare with.)}}} apparently not
+     too much going on in the linux world. The focus here seems to be
+     more on containerizing applications in order to isolate them from
+     the rest of the host system rather than to make the host system
+     itself more solid (which is also great, but not the same).
+
+     On linux there are presently - at least to my knowledge - only the
+     following projects that aim in a similiar direction:
+     - There is [[https://en.opensuse.org/openSUSE:Snapper_Tutorial][snapper]] for =btrfs=, which seems to be a quite Suse
+       specific solution. However according to it's documentation:
+       [[https://www.suse.com/documentation/sles-15/book_sle_admin/data/sec_snapper_snapshot-boot.html#sec_snapper_snapshot-boot_limits]["A
+       complete system rollback, restoring the complete system to the
+       identical state as it was in when a snapshot was taken, is not
+       possible."]] This, at least without more explanation or context
+       sounds quite a bit spooky.
+     - There is a [[https://github.com/b333z/beadm][Linux port]] of the FreeBSD beadm tool, which hasn't
+       been updated in ~3 years, while beadm has. It does not seem to
+       be maintained any more and to be tailored to a single gentoo
+       installation.
+     - There are a few =btrfs= specific scripts by a company called
+       [[https://github.com/PluribusNetworks/pluribus_linux_userland/tree/master/components/bootenv-tools/bootenv-tools-src][Pluribus Networks]], which seem to have implemented their own
+       version of =beadm= on top of =btrfs=. This apparently runs on some
+       network devices.
+     - [[https://nixos.org/][NixOS]] does something similiar to boot environments with their
+       atomic update and rollback feature, but as far as I've
+       understood this is still different from boot environments. Being
+       functional, they don't exactly roll back to a old version of the
+       system based on a filesystem snapshot, but rather recreate an
+       identical environment to a previous one.
+     - And finally there is [[https://github.com/johnramsden/zedenv][zedenv]], a boot environment manager that is
+       written in python, supports both Linux and Freebsd and works
+       really nice. It's also the one that I've used before. It is also
+       what we are going to use here, since there really isn't an
+       alternative when it comes to linux and ZFS.
+*** Poking around in Proxmox
+    But before we start grabbing a copy of =zedenv=, we have to take a
+    closer look into Proxmox itself in order to look at what we may
+    have to adapt.
+
+    Basically we already know that it is generally possible to use boot
+    environments with ZFS and linux, so what we want is hopefully not
+    exactly rocket science.
+
+    What we are going to check is:
+    1. How do we have to adapt the Proxmox VE 6 rpool?
+    2. How does Proxmox prepare the boot process and what do we have to
+       tweak to make it boot into a boot environment?
+**** The Proxmox ZFS layout
+     In this part we are going to take a look at how the ZFS layout is
+     set up by the proxmox installer. This is because there's a few
+     things we have to consider when we use boot environments with
+     Proxmox:
+     1. We do not ever want to interfere in the operation of our guest
+        machines: Since we have the ability to snapshot and restore
+        virtual machines and containers, there is really no benefit to
+        include them into the snapshots of our boot environments, on
+        the contrary, we really don't want to end up with guests of our
+        tenants missing files just because we've made a rollback.
+     2. Is the ZFS layout compatible with running boot environments? Not
+        all systems with ZFS are automatically compatible with using Boot
+        Environments, basically if you just mount your ZFS pool as =/=, it
+        won't work
+     3. Are there any directories we have to exclude from the root
+        dataset?
+
+     So lets look at Proxmox:
+     By default after installing with ZFS root you get a pool called
+     =rpool= which is split up into =rpool/ROOT= as well as =rpool/data= and
+     looks similiar to this (=zfs list=):
+
+     #+begin_example bash
+       rpool                         4.28G   445G      104K  /rpool
+       rpool/ROOT                    2.43G   445G       96K  /rpool/ROOT
+       rpool/ROOT/pve-1              2.43G   445G     2.43G  /
+       rpool/data                    1.84G   445G      104K  /rpool/data
+       rpool/data/subvol-101-disk-0   831M  7.19G      831M  /rpool/data/subvol-101-disk-0
+       rpool/data/vm-100-disk-0      1.03G   445G     1.03G  -
+     #+end_example
+
+     =rpool/data= contains the virtual machines as well as the containers
+     as you can see in the output of =zfs list= above. That's great, we
+     don't have to manually move them. This takes care of the second
+     point of our checklist from above.
+
+     Also =rpool/ROOT/pve-1= is mounted as =/=, so we have =rpool/ROOT= which
+     can potentially hold more than one snapshot of =/=, that is actually
+     exactly what we need in order to use boot environments, the
+     Proxmox team just saved us a bunch of time!
+
+     This only leaves the third part of our little checklist open. Which
+     directories are left that we don't want to snapshot as part of our
+     boot environments? We can find a pretty important one in this
+     context by checking =/etc/pve/storage.cfg=:
+
+     #+begin_example
+       dir: local
+               path /var/lib/vz
+               content iso,vztmpl,backup
+
+       zfspool: local-zfs
+               pool rpool/data
+               sparse
+               content images,rootdir
+     #+end_example
+
+     So while the virtual machines and the containers are part of
+     =rpool/data=, iso files, templates and backups are still located in
+     =rpool/root/pve-1=. That's not really what we want, imagine rolling
+     back to a Boot Environment from a week ago and suddenly missing a
+     weeks worth of Backups, that would be pretty annoying. Iso files
+     as well as container templates are probably not worth keeping in
+     our boot environments either.
+
+     So lets take =/var/lib/vz= out of =rpool/root/pve-1=, first create a
+     new zvol:
+     #+begin_example bash
+       root@caliban:/var/lib# zfs create -o mountpoint=/var/lib/vz rpool/vz
+       cannot mount '/var/lib/vz': directory is not empty
+     #+end_example
+
+     Then move over the content of =/var/lib/vz= into the newly created
+     and not yet mounted zvol:
+     #+begin_example bash
+       mv /var/lib/vz/ vz.old/ && zfs mount rpool/vz && mv vz.old/* /var/lib/vz/ && rmdir vz.old
+     #+end_example
+
+     If you don't have any images, templates or backups yet, or you just
+     don't particularly care about them, you can of course also just
+     remove =/var/lib/vz/*= entirely, mount =rpool/vz= and recreate the
+     folder structure:
+     #+begin_example bash
+       root@caliban:~# tree -a /var/lib/vz/
+       /var/lib/vz/
+       ├── dump
+       └── template
+           ├── cache
+           ├── iso
+           └── qemu
+     #+end_example
+
+     Ok, now that's out of the way, we should in general be able to make
+     snapshots, roll them back without disturbing the operation of the
+     proxmox server too much.
+
+     *BUT*: this might not apply to your server, since there is still a
+     lot of other stuff in =/var/lib/= that you may want to include or
+     exclude from snapshots! Better be sure to check what's in there.
+
+     Also there are some other directories we might want to
+     exclude. There is for example =/tmp= as well as =/var/tmp/= which
+     shouldn't include anything that is worth keeping, but which of
+     course would be snapshotted as well, we can create zvols for them
+     as well and they should be automounted on reboot:
+     #+begin_example bash
+      zfs create -o mountpoint=/tmp     rpool/tmp
+      zfs create -o mountpoint=/var/tmp rpool/var_tmp
+     #+end_example
+
+     If you've users that can connect directly to your Proxmox host,
+     you might want to exclude =/home/= as well. =/root/= might be another
+     good candidate, you may want to keep all of your shell history
+     available at all times and regardless of which snapshot you're
+     currently in. You can also think about whether or not you want to
+     have your logs, mail and proabably a bunch of other things
+     included or excluded, I guess both variants have their use cases.
+
+     On my system =zfs list= returns something like this:
+     #+begin_example bash
+       NAME                           USED  AVAIL     REFER  MOUNTPOINT
+       rpool                         5.25G   444G      104K  /rpool
+       rpool/ROOT                    1.34G   444G       96K  /rpool/ROOT
+       rpool/ROOT/pve-1              1.30G   444G     1.16G  /
+       rpool/data                    2.59G   444G      104K  /rpool/data
+       rpool/home_root               7.94M   444G     7.94M  /root
+       rpool/tmp                      128K   444G      128K  /tmp
+       rpool/var_tmp                  136K   444G      136K  /var/tmp
+       rpool/vz                      1.30G   444G     1.30G  /var/lib/vz
+     #+end_example
+
+     At this point we've made sure that:
+     1. the Proxmox ZFS layout is indeed compatible with Boot
+        Environments pretty much out of the box
+     2. we moved the directories that might impact day to day operations
+        out of what we want to snapshot
+     3. we also excluded a few more directories, which is optional
+**** The Boot Preparation
+     So after we've made sure that our ZFS layout works in this step we
+     have to take a closer look at how the boot process is prepared in
+     Proxmox. That is because as you might have noticed Proxmox does
+     this a bit different from what you might be used to from other
+     linux systems.
+
+     As an example this is what =lsblk= looks like on my local machine:
+     #+begin_example
+       nvme0n1           259:0    0  477G  0 disk
+       ├─nvme0n1p1       259:1    0    2G  0 part  /boot/efi
+       └─nvme0n1p2       259:2    0  475G  0 part
+         └─crypt         253:0    0  475G  0 crypt
+           ├─system-swap 253:1    0   16G  0 lvm   [SWAP]
+           └─system-root 253:2    0  100G  0 lvm   /
+      #+end_example
+
+     And this is =lsblk= on Proxmox:
+     #+begin_example
+       sda               8:0    0 465.8G  0 disk
+       ├─sda1            8:1    0  1007K  0 part
+       ├─sda2            8:2    0   512M  0 part
+       └─sda3            8:3    0 465.3G  0 part
+         └─cryptrpool1 253:0    0 465.3G  0 crypt
+       sdd               8:48   0 465.8G  0 disk
+       ├─sdd1            8:49   0  1007K  0 part
+       ├─sdd2            8:50   0   512M  0 part
+       └─sdd3            8:51   0 465.3G  0 part
+         └─cryptrpool2 253:1    0 465.3G  0 crypt
+     #+end_example
+
+     Notice how there is no mounted EFI Systems Partition? That's
+     because both{{{sidenote(Actually the UUIDs of all used ESP
+     Partitions are stored in /etc/kernel/pve-efiboot-uuids)}}} of the
+     /dev/sdX2 devices, which are involved holding my mirrored =proot=
+     pool contain a valid ESP. Also proxmox does not mount these
+     partitions by default but rather encurages the use of their
+     =pve-efiboot-tool=, which then takes care of putting a valid boot
+     configuration on all involved drives, so you can boot off any of
+     them.
+
+     This is not at all bad design, on the contrary, it is however
+     noteworthy, because it bit it is different from what other systems
+     with boot environments are using.
+
+     Here is a quick recap on how in Proxmox the boot process is
+     prepared:
+     1. Initially something happens that requires an update of the
+        bootloader configuration (e.g. a new kernel is installed or
+        you've just set up an full disk encryption, changed something
+        in the initramfs)
+     2. This leads to =/usr/sbin/pve-efiboot-tool refresh= being run
+        (either automated or manually), which at some point executes
+        =/etc/kernel/postinst.d/zz-pve-efiboot=, which is the script that
+        loops over the ESPs (which are defined by their UUID in
+        =/etc/kernel/pve-efiboot-uuids=), mounts them and generates the
+        boot loader configuration on them according to what Proxmox (or
+        you as the user) has [[https://pve.proxmox.com/wiki/Host_Bootloader][defined as kernel versions to keep]]. The
+        bootloader configuration is created for every kernel and
+        configured with the kernel commandline options from
+        =/etc/kernel/cmdline=.
+     3. On reboot you can use any harddrive that holds a EFI System
+        Partition to boot from.
+
+     Incidentally the =/etc/kernel/cmdline= file is also the one we
+     configured in the previous post in order to enable remote
+     decryption on a fully encrypted Proxmox host. Apart from the the
+     options we added to it last time, it also contains another very
+     interesting one:
+
+     #+begin_example bash
+       root=ZFS=rpool/ROOT/pve-1
+     #+end_example
+**** A Simple Proof of Concept
+     At this point we already have everything we need:
+     #+begin_src bash
+       zfs snapshot rpool/ROOT/pve-1@test
+       zfs clone rpool/ROOT/pve-1@test rpool/ROOT/pve-2
+       zfs set mountpoint=/ rpool/ROOT/pve-2
+       sed -i 's/pve-1/pve-2/' /etc/kernel/cmdline
+       pve-efiboot-tool refresh
+       reboot
+     #+end_src
+
+     Tadaa!
+     #+begin_example bash
+       root@caliban:~# mount | grep rpool
+       rpool/ROOT/pve-2 on / type zfs (rw,relatime,xattr,noacl)rpool on /rpool type zfs (rw,noatime,xattr,noacl)rpool/var_tmp on /var/tmp type zfs (rw,noatime,xattr,noacl)rpool/home_root on /root type zfs (rw,noatime,xattr,noacl)
+       rpool/tmp on /tmp type zfs (rw,noatime,xattr,noacl)
+       rpool/vz on /var/lib/vz type zfs (rw,noatime,xattr,noacl)
+       rpool/ROOT on /rpool/ROOT type zfs (rw,noatime,xattr,noacl)
+       rpool/data on /rpool/data type zfs (rw,noatime,xattr,noacl)
+       rpool/data/subvol-101-disk-0 on /rpool/data/subvol-101-disk-0 type zfs (rw,noatime,xattr,posixacl)
+     #+end_example
+
+     Congratulations, you've just created your first boot environment!
+     If you're not convinced yet, just install something such as =htop=,
+     enjoy the colors for a bit and run:
+
+     #+begin_example bash
+       sed -i 's/pve-2/pve-1/' /etc/kernel/cmdline
+       pve-efiboot-tool refresh
+       reboot
+     #+end_example
+
+     And finally try to run =htop= again. Notice how it's not only gone,
+     in fact it was never even there in the first place, at least in
+     from the systems point of view! Let that sink in for a moment. You
+     want this. {{{marginnote(At this point you might want to take a
+     small break\, grab another cup of coffee\, lean back and remember
+     this one time\, back in the day when you were just getting started
+     with all this operations stuff\, it was almost beer o'clock and
+     before going home you just wanted to apply this one tiny little
+     update\, which of course led to the whole server
+     breaking. Remember how\, when you were refilling your coffee cup
+     for the third time this old solaris guru walked by on his way home
+     and he had this mysterious smile on his face. Yeah\, he knew you
+     were about to spend half of the night there fixing the issue and
+     reinstalling everything\, in fact he probably had a similiar issue
+     at the same day\, but then decided to just roll back go home a bit
+     early and take care of it the next day.)}}}
+*** From one Proof of Concept to Another
+    So at this point we know how to set up a boot environment by hand,
+    that's nice, but currently we only can hop back and forth between a
+    single boot environment, which is not cool enough yet.
+
+    We basically need some tooling which we can use to make everything
+    work together nicely. 
+
+    So in this section we are going to look into tooling as well as
+    into how we may be able to make Proxmox play well together with the
+    boot environment manager of our (only) choice =zedenv=.
+
+    Our new objective is to look at what we need to do in order to
+    enable us to select and start any number of boot environments from
+    the boot manager.
+**** Sidenote: The Proxmox ESP Size
+     But first a tiny bit of math: since Proxmox uses systemd-boot, the
+     kernel and initrd are stored in the EFI Systems Partition, which
+     in a normal installation is 512MB in size. That should be enogh
+     for the default case, where Proxmox stores only a hand full of
+     kernels to boot from.
+
+     In our case however we might want to be able to access a higher
+     number of kernels, so we can travel back in time in order to also
+     start old boot environments.
+
+     A typical pair of kernel and initrd seems to be about 50MB in
+     size, so we can currently store about 10 different kernels at a
+     time.
+
+     If we want to increase the size of the ESP however we might be out
+     of luck, since ZFS does not like to shrink, so if you're in the
+     situation of setting up a fresh Proxmox host, you might want to
+     plug in a USB Stick (with less storage than your drives) or
+     something similiar and create a mirrored ZFS RAID1 with this
+     device and the other two drives which you really want to use for
+     storage. This way the size of the resulting ZFS partition will be
+     smaller than the drives you actually use and after the initial
+     installation you can just:
+     1. Remove the small drive from =rpool=
+     2. Remove the first normal drive from =rpool=, delete the ZFS
+        partition, increase the size of the ESP to whatever you want,
+        recreate a ZFS partition and readd it to =rpool=
+     3. wait until =rpool= has resilvered the drive
+     4. repeat 2. and 3. with your second drive.
+**** =zedenv=: A Boot Environment Manager
+     Now lets install =zedenv= {{{sidenote(Be sure to read the
+     [[https://zedenv.readthedocs.io][documentation]] at some point in time. Also check out [[https://ramsdenj.com][John Ramsdens
+     blog]]\, which contains a bit more info about zedenv\, workint linux
+     ZFS configuration and a bunch of other awesome stuff)}}}:
+
+     #+begin_example bash
+      root@caliban:~# apt install git python3-venv
+
+      root@caliban:~# mkdir opt
+      root@caliban:~# cd opt
+      root@caliban:~# git clone https://github.com/johnramsden/pyzfscmds
+      root@caliban:~# git clone https://github.com/johnramsden/zedenv
+
+      root@caliban:~/opt# python3.7 -m venv zedenv-venv
+      root@caliban:~/opt# . zedenv-venv/bin/activate
+      (zedenv-venv) root@caliban:~/opt# cd pyzfscmds/
+      (zedenv-venv) root@caliban:~/opt/pyzfscmds# python setup.py install
+      (zedenv-venv) root@caliban:~/opt/pyzfscmds# cd ../zedenv
+      (zedenv-venv) root@caliban:~/opt/zedenv# python setup.py install
+    #+end_example
+
+     Now =zedenv= should be installed into our new =zedenv-venv=:
+
+     #+begin_example bash
+
+       (zedenv-venv) root@caliban:~# zedenv --help
+       Usage: zedenv [OPTIONS] COMMAND [ARGS]...
+         ZFS boot environment manager cli
+       Options:  --version
+         --plugins  List available plugins.  --help     Show this message and exit.
+
+       Commands:
+         activate  Activate a boot environment.  create    Create a boot environment.
+         destroy   Destroy a boot environment or snapshot.
+         get       Print boot environment properties.  list      List all boot environments.
+         mount     Mount a boot environment temporarily.
+         rename    Rename a boot environment.  set       Set boot environment properties.
+         umount    Unmount a boot environment.
+     #+end_example
+
+     As you can check =systemd-boot= seems to be supported out of the box:
+     #+begin_example bash
+       (zedenv-venv) root@caliban:~# zedenv --plugins
+       Available plugins:
+       systemdboot
+     #+end_example
+
+     But since we are using Proxmox =systemd-boot= and =zedenv= are
+     actually not really supported. Remember that Proxmox doesn't
+     actually mount the EFI System Partitions? Well =zedenv= makes the
+     assumption that there is only one ESP, and that it is mounted
+     somewhere at all times.
+
+     Nonetheless, lets explore =zedenv= a bit so you can see how using a
+     boot environment manager looks like. Let's =list= the available boot
+     environments:
+     #+begin_example bash
+       (zedenv-venv) root@caliban:~# zedenv list
+       Name   Active   Mountpoint   Creation
+       pve-1  NR       /            Mon-Aug-19-1:27-2019
+
+       (zedenv-venv) root@caliban:~# zfs list -r rpool/ROOT
+       NAME               USED  AVAIL     REFER  MOUNTPOINT
+       rpool/ROOT        1.17G   444G       96K  /rpool/ROOT
+       rpool/ROOT/pve-1  1.17G   444G     1.17G  /
+     #+end_example
+
+     Before we can create new boot environments, we have to outwit
+     =zedenv= on our Proxmox host: we have to set the bootloader to
+     systemd-boot and due to the assumption that the ESP has to be
+     mounted, we also have to make =zedenv= believe that the ESP is
+     mounted (=/tmp/efi= is a reasonably sane path for this since we
+     won't be really using =zedenv= to configure =systemd-boot= here):
+     #+begin_example bash
+       zedenv set org.zedenv:bootloader=systemdboot
+       mkdir /tmp/efi
+       zedenv set org.zedenv.systemdboot:esp=/tmp/efi
+     #+end_example
+
+     We can now =create= new boot environments:
+     #+begin_example bash
+       (zedenv-venv) root@caliban:~# zedenv create default-000
+
+       (zedenv-venv) root@caliban:~# zedenv list
+       Name         Active   Mountpoint   Creation
+       pve-1        NR       /            Mon-Aug-19-1:27-2019
+       default-000           -            Sun-Aug-25-19:44-2019
+
+       (zedenv-venv) root@caliban:~# zfs list -r rpool/ROOT
+       NAME                     USED  AVAIL     REFER  MOUNTPOINT
+       rpool/ROOT              1.17G   444G       96K  /rpool/ROOT
+       rpool/ROOT/default-000     8K   444G     1.17G  /
+       rpool/ROOT/pve-1        1.17G   444G     1.17G  /
+     #+end_example
+
+     Notice the =NR=? This shows us that the =pve-1= boot environment is
+     now active (=N=) and after the next reboot the =pve-1= boot
+     environment will be active (=R=).
+
+     We also get information on the mountpoint of the boot environment
+     as well as the date, when the boot environment was created, so we
+     get a bit more information than only having the name of the boot
+     environment.
+
+     On a fully supported system we could now also =activate= the
+     =default-000= boot environment, that we've just created and we
+     would then get an output similiar to this, showing us that
+     =default-000= would be active on the next
+     reboot{{{marginnote(=zedenv= can also =destroy=\, =mount= and =unmount=
+     boot environments as well as =get= and =set= some ZFS specific
+     options\, but right now what we want to focus on is how to get
+     activation working with Proxmox.)}}}:
+     #+begin_example bash
+       (zedenv-venv) root@caliban:~# zedenv activate default-000
+       (zedenv-venv) root@caliban:~# zedenv list
+        Name         Active   Mountpoint   Creation
+        pve-1        N        /            Mon-Aug-19-1:27-2019
+        default-000  R        -            Sun-Aug-25-19:44-2019
+     #+end_example
+
+     Since we are on Proxmox however, instead we'll get the following
+     error message:
+     #+begin_example
+       (zedenv-venv) root@caliban:~# zedenv activate default-000
+       WARNING: Running activate without a bootloader. Re-run with a default bootloader, or with the '--bootloader/-b' flag. If you plan to manually edit your bootloader config this message can safely be ignored.
+     #+end_example
+
+     At this point you have seen how a typical boot environment manager
+     looks like and you now know what =create= and =activate= will usually
+     do. 
+**** =systemd-boot= and the EFI System Partitions
+     Next we'll take a closer look into the content of these EFI System
+     Partitions and the files systemd-boot is using to start our system
+     so lets take a look at what is stored on a ESP in Proxmox:
+     #+begin_example bash
+
+       (zedenv-venv) root@caliban:~# mount /dev/sda2 /boot/efi/
+       (zedenv-venv) root@caliban:~# tree /boot/efi
+       .
+       ├── EFI
+       │   ├── BOOT
+       │   │   └── BOOTX64.EFI
+       │   ├── proxmox
+       │   │   ├── 5.0.15-1-pve
+       │   │   │   ├── initrd.img-5.0.15-1-pve
+       │   │   │   └── vmlinuz-5.0.15-1-pve
+       │   │   └── 5.0.18-1-pve
+       │   │       ├── initrd.img-5.0.18-1-pve
+       │   │       └── vmlinuz-5.0.18-1-pve
+       │   └── systemd
+       │       └── systemd-bootx64.efi
+       └── loader
+           ├── entries
+           │   ├── proxmox-5.0.15-1-pve.conf
+           │   └── proxmox-5.0.18-1-pve.conf
+           └── loader.conf
+     #+end_example
+
+     So we have the kernels and initrd in =EFI/proxmox= and some
+     configuration files in =loader/=.
+
+     The loader.conf file looks like this:
+     #+begin_example bash
+       (zedenv-venv) root@caliban:/boot/efi# cat loader/loader.conf
+       timeout 3
+       default proxmox-*
+     #+end_example
+
+     We have a 3 second timeout in =systemd-boot= and the default boot
+     entry has to begin with the string =proxmox=. Nothing too
+     complicated here.
+
+     Apart from that, we have the =proxmox-5.X.X-pve.conf= files which we
+     already know from last time (they are what is generated by the
+     =/etc/kernel/postinst.d/zz-pve-efiboot= script). They look like
+     this:
+     #+begin_example
+       (zedenv-venv) root@caliban:/boot/efi# cat loader/entries/proxmox-5.0.18-1-pve.conf
+       title    Proxmox Virtual Environment
+       version  5.0.18-1-pve
+       options  ip=[...] cryptdevice=UUID=[...] cryptdevice=UUID=[...] root=ZFS=rpool/ROOT/pve-1 boot=zfs
+       linux    /EFI/proxmox/5.0.18-1-pve/vmlinuz-5.0.18-1-pve
+       initrd   /EFI/proxmox/5.0.18-1-pve/initrd.img-5.0.18-1-pve
+     #+end_example
+     So basically they just point to the kernel and initrd in the
+     =EFI/proxmox= directory and start the kernel with the right =root=
+     option so that the correct boot environment is mounted.
+
+     At this point it makes sense to reiterate what a boot evironment
+     is. Up until now we have defined a boot environment loosely as a
+     file system snapshot we can boot into. At this point we have to
+     refine the "we can boot into" part of this definition: A Boot
+     environment is a filesystem snapshot together with the bootloader
+     configuration as well as the kernel and initrd files from the
+     moment the snapshot was taken.
+
+     The boot environment of =pve-1= consists specifically of the
+     following files from the ESP partition:
+     #+begin_example
+       .
+       ├── EFI
+       │   ├── proxmox
+       │   │   ├── 5.0.15-1-pve
+       │   │   │   ├── initrd.img-5.0.15-1-pve
+       │   │   │   └── vmlinuz-5.0.15-1-pve
+       │   │   └── 5.0.18-1-pve
+       │   │       ├── initrd.img-5.0.18-1-pve
+       │   │       └── vmlinuz-5.0.18-1-pve
+       └── loader
+           └── entries
+               ├── proxmox-5.0.15-1-pve.conf
+               └── proxmox-5.0.18-1-pve.conf
+     #+end_example
+
+     If you head over to the part of the [[https://zedenv.readthedocs.io/en/latest/plugins.html#systemdboot][zedenv documentation on
+     systemd-boot]], you see that there the creation of an =/env= directory
+     that holds all of the boot environment specific files on the ESP
+     is proposed in that coupled with a bit of bind-mount magic tricks
+     the underlying system into always finding the right files inside
+     of =/boot=, when actually only the files that that belong to the
+     currently active boot environment are mounted.
+
+     This does not apply to our Proxmox situation, there is for example
+     no mounted ESP. Also the =pve-efiboot-tool= takes care of the kernel
+     versions that are available in the =EFI/proxmox/= directory so
+     unless they are marked as manually installed (which you can do in
+     Proxmox) some of the kernel versions will disappear at some point
+     in time rendering the boot environment incomplete.
+
+**** Making =zedenv= and Proxmox play well together
+
+     I should probably point out here, that this part is more of a
+     proposition, of how this could work than necessarily a good
+     solution (it does work though). I'm pretty new to Proxmox and not
+     at all an expert, when it comes to boot environments, so better
+     take everything here with a few grains of salt.
+
+     As we've learned in the previous part, =zedenv= is pretty awesome,
+     but by design not exactly aimed at working with Proxmox. That
+     being said, =zedenv= is actually written with plugins in mind, I've
+     skimmed the code and there is a bunch of pre- and post-hooking
+     going on, so I think it could be possible to just set up some sort
+     of Proxmox plugin for =zedenv=. Since I'm not a =python= guy and
+     there's of course also the option to add support to this from the
+     Proxmox side, I'll just write down how I'd imagine Proxmox and a
+     boot environment manager such as =zedenv= to work together without
+     breaking too much on either side.
+
+     For this we have to consider the following things:
+     1. remember the =NR=? I guess =zedenv= just checks what is currently
+        mounted as =/= in order to find out what the currently active
+        boot environment (=N=) is. In Proxmox in order to find out what
+        the active boot-environment after a reboot (=R=) will be, we can
+        just check the =/etc/kernel/cmdline= file for the =root= option
+     2. =activate= does not work with Proxmox, instead of creating the
+        systemd-boot files, we could just run =pve-efiboot-tool refresh=,
+        which creates a copy of the necessary bootloader files on all
+        ESPs and doing so also activates the boot environment, that is
+        referenced in the =/etc/kernel/cmdline= file. So with a template
+        cmdline file like for example =/etc/kernel/cmdline.template=, we
+        could run something like this, basically creating a cmdline,
+        that points to the correct boot environment and refresh the
+        content of all ESPs at the same time:
+        #+begin_example bash
+          sed 's/BOOTENVIRONMENT/pve-2/' /etc/kernel/cmdline.template > /etc/kernel/cmdline
+          pve-efiboot-tool refresh
+        #+end_example
+
+     That's about everything we'd need to replace in order to get a
+     single boot environment to work with =zedenv=.
+
+     Now if we want to have access to multiple boot environments at the
+     same time, we can just do something quite similiar to what Proxmox
+     does: The idea here would be that after any run of
+     =pve-efiboot-tool refresh=, we mount one of the ESPs and grab the
+     all the files we need from =EFI/proxmox/= as well as =loader/entries/=
+     and store them somewhere on =rpool=. We could for example create
+     =rpool/be= for this exact reason.
+
+     #+begin_example bash
+       zfs create -o mountpoint=/be rpool/be
+     #+end_example
+
+     The initrd that comes with a kernel might be customized, so
+     although the initrd file is built against a kernel we want to
+     always keep it directly tied to a specific boot environments. I'm
+     not sure if the kernel files change over time or not though, so
+     there's two options here (Let's just assume the first of the
+     following to be sure):
+     - If they are changing over time, while keeping the same kernel
+       version, it is probably best to save them per boot environment
+     - If they don't change over time, we could just grab them once and
+       then link to the kernel once we've already saved it
+
+***** A better Proof of Concept
+
+      So lets suppose that we have just freshly created the boot
+      environment =EXAMPLE= and activated it as described above using
+      =pve-efiboot-tool refresh= on a =/etc/kernel/cmdline= file that we
+      derived from the =/etc/kernel/cmdline.template= and Proxmox has
+      just set up all of our ESPs.
+
+      Now we create a =/be/EXAMPLE/= directory, then mount one of the
+      ESPs and in the next step copy over the files we are interested
+      in.
+
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# BOOTENVIRONMENT=EXAMPLE
+        (zedenv-venv) root@caliban:~# mkdir -p /be/$BOOTENVIRONMENT/{kernel,entries}
+        (zedenv-venv) root@caliban:~# zedenv create $BOOTENVIRONMENT
+        (zedenv-venv) root@caliban:~# zedenv list
+        Name         Active   Mountpoint   Creation
+        pve-1        NR       -            Mon-Aug-19-1:27-2019
+        EXAMPLE               -            Wed-Aug-28-20:24-2019
+
+
+        (zedenv-venv) root@caliban:~# pve-efiboot-tool refresh
+        Running hook script 'pve-auto-removal'..
+        Running hook script 'zz-pve-efiboot'..
+        Re-executing '/etc/kernel/postinst.d/zz-pve-efiboot' in new private mount namespace..
+        Copying and configuring kernels on /dev/disk/by-uuid/EE5A-CB7D
+                Copying kernel and creating boot-entry for 5.0.15-1-pve
+                Copying kernel and creating boot-entry for 5.0.18-1-pve
+        Copying and configuring kernels on /dev/disk/by-uuid/EE5B-4F9B
+                Copying kernel and creating boot-entry for 5.0.15-1-pve
+                Copying kernel and creating boot-entry for 5.0.18-1-pve
+
+
+        (zedenv-venv) root@caliban:~# mount /dev/disk/by-uuid/$(cat /etc/kernel/pve-efiboot-uuids | head -n 1) /boot/efi
+
+
+        (zedenv-venv) root@caliban:~# cp -r /boot/efi/EFI/proxmox/* /be/$BOOTENVIRONMENT/kernel/
+        (zedenv-venv) root@caliban:~# cp /boot/efi/loader/entries/proxmox-*.conf /be/$BOOTENVIRONMENT/entries/
+      #+end_example
+
+      Now that we have copied over all files we need, it's time to
+      modify them =/be= should look like this:
+      #+begin_example
+        /be/
+        └── EXAMPLE
+            ├── entries
+            │   ├── proxmox-5.0.15-1-pve.conf
+            │   └── proxmox-5.0.18-1-pve.conf
+            └── kernel
+                ├── 5.0.15-1-pve
+                │   ├── initrd.img-5.0.15-1-pve
+                │   └── vmlinuz-5.0.15-1-pve
+                └── 5.0.18-1-pve
+                    ├── initrd.img-5.0.18-1-pve
+                    └── vmlinuz-5.0.18-1-pve
+      #+end_example
+
+      Lets first fix the file names, =/entries/proxmox-X.X.X-X-pve.conf=
+      should be named after our boot environment =EXAMPLE=:
+
+      #+begin_example bash
+        BOOTENVIRONMENT=EXAMPLE
+        cd /be/EXAMPLE/entries/
+        for f in *.conf; do mv $f $(echo $f | sed "s/proxmox/$BOOTENVIRONMENT/"); done
+      #+end_example
+
+      Next let's look into those configuration files:
+      #+begin_example
+        title    Proxmox Virtual Environment
+        version  5.0.18-1-pve
+        options  [...] root=ZFS=rpool/ROOT/EXAMPLE boot=zfs
+        linux    /EFI/proxmox/5.0.18-1-pve/vmlinuz-5.0.18-1-pve
+        initrd   /EFI/proxmox/5.0.18-1-pve/initrd.img-5.0.18-1-pve
+      #+end_example
+
+      As you can see they reference the initrd as well as the kernel
+      (with the ESP being =/=). We are going to put these into
+      =/env/EXAMPLE/= instead, so lets fix this. Also we want to change
+      the Title from "Proxmox Virtual Environment" to the name of the
+      boot environment.
+      #+begin_example bash
+        cd /be/EXAMPLE/entries
+
+        BOOTENVIRONMENT=EXAMPLE
+        sed -i "s/EFI/env/;s/proxmox/$BOOTENVIRONMENT/" *.conf
+        sed -i "s/Proxmox Virtual Environment/$BOOTENVIRONMENT/" *.conf
+      #+end_example
+
+      The configuration files now look like this:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:/be/EXAMPLE/entries# cat EXAMPLE-5.0.18-1-pve.conf
+        title    EXAMPLE
+        version  5.0.18-1-pve
+        options  [...] root=ZFS=rpool/ROOT/EXAMPLE boot=zfs
+        linux    /env/EXAMPLE/5.0.18-1-pve/vmlinuz-5.0.18-1-pve
+        initrd   /env/EXAMPLE/5.0.18-1-pve/initrd.img-5.0.18-1-pve
+      #+end_example
+
+      Remember the =loader.conf= file that only consisted of 2 lines?
+      We'll also need to have one like it in order to boot into our new
+      boot environment by default, so we'll copy and modify it as well.
+      #+begin_example bash
+        BOOTENVIRONMENT=EXAMPLE
+        cat /boot/efi/loader/loader.conf | sed "s/proxmox/$BOOTENVIRONMENT/" > /be/$BOOTENVIRONMENT/loader.conf
+      #+end_example
+
+      Finally don't forget to unmount the ESP:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# umount /boot/efi/
+      #+end_example
+
+      Now =/be= should look similiar to this and at this point we are
+      done with the part where we configure our files:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# tree /be
+        /be
+        └── EXAMPLE
+            ├── entries
+            │   ├── EXAMPLE-5.0.15-1-pve.conf
+            │   └── EXAMPLE-5.0.18-1-pve.conf
+            ├── kernel
+            │   ├── 5.0.15-1-pve
+            │   │   ├── initrd.img-5.0.15-1-pve
+            │   │   └── vmlinuz-5.0.15-1-pve
+            │   └── 5.0.18-1-pve
+            │       ├── initrd.img-5.0.18-1-pve
+            │       └── vmlinuz-5.0.18-1-pve
+            └── loader.conf
+      #+end_example
+
+      Next we can deploy our configuration to the ESP, to do so, we'll
+      do the following:
+      1. iterate over the ESPs used by Proxmox (remember their UUIDs are
+         in =/etc/kernel/pve-efiboot-uuids=)
+      2. mount a ESP
+      3. copy the files in =/be/EXAMPLE/kernel= into =/env/EXAMPLE=
+         {{{sidenote(remember that this =/= is the root of the ESP)}}
+      4. copy the config files in =/be/EXAMPLE/entries= into
+         =/loader/entries/=
+      5. replace =/loader/loader.conf= with our modified =loader.conf= in
+         order to activate the boot environment
+      6. unmount the ESP
+      7. repeat until we've updated all ESPs from
+         =/etc/kernel/pve-efiboot-uuids=
+
+      In =bash= this could look like this:
+      #+begin_example bash
+        BOOTENVIRONMENT=EXAMPLE
+
+        for esp in $(cat /etc/kernel/pve-efiboot-uuids);
+        do
+          mount /dev/disk/by-uuid/$esp /boot/efi
+          mkdir -p /boot/efi/env/$BOOTENVIRONMENT
+          cp -r /be/$BOOTENVIRONMENT/kernel/* /boot/efi/env/$BOOTENVIRONMENT/
+          cp /be/$BOOTENVIRONMENT/entries/* /boot/efi/loader/entries/
+          cat /be/$BOOTENVIRONMENT/loader.conf > /boot/efi/loader/loader.conf
+          umount /boot/efi
+        done
+      #+end_example
+
+      Also note that reactivating the boot environment is now simply a
+      matter of replacing the =loader.conf=.
+
+
+      Now let's check if everything looks good. The ESPs should look
+      like this:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# tree /boot/efi/
+        /boot/efi/
+        ├── EFI
+        │   ├── BOOT
+        │   │   └── BOOTX64.EFI
+        │   ├── proxmox
+        │   │   ├── 5.0.15-1-pve
+        │   │   │   ├── initrd.img-5.0.15-1-pve
+        │   │   │   └── vmlinuz-5.0.15-1-pve
+        │   │   └── 5.0.18-1-pve
+        │   │       ├── initrd.img-5.0.18-1-pve
+        │   │       └── vmlinuz-5.0.18-1-pve
+        │   └── systemd
+        │       └── systemd-bootx64.efi
+        ├── env
+        │   └── EXAMPLE
+        │       ├── 5.0.15-1-pve
+        │       │   ├── initrd.img-5.0.15-1-pve
+        │       │   └── vmlinuz-5.0.15-1-pve
+        │       └── 5.0.18-1-pve
+        │           ├── initrd.img-5.0.18-1-pve
+        │           └── vmlinuz-5.0.18-1-pve
+        └── loader
+            ├── entries
+            │   ├── EXAMPLE-5.0.15-1-pve.conf
+            │   ├── EXAMPLE-5.0.18-1-pve.conf
+            │   ├── proxmox-5.0.15-1-pve.conf
+            │   └── proxmox-5.0.18-1-pve.conf
+            └── loader.conf
+      #+end_example
+
+      The =loader.conf= should default to =EXAMPLE= entries:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# cat /boot/efi/loader/loader.conf | grep EXAMPLE
+        default EXAMPLE-*
+      #+end_example
+
+      The =EXAMPLE-*.conf= files should point to the files in
+      =/env/EXAMPLE=:
+      #+begin_example bash
+        (zedenv-venv) root@caliban:~# cat /boot/efi/loader/entries/EXAMPLE-*.conf | grep "env/EXAMPLE"
+        linux    /env/EXAMPLE/5.0.15-1-pve/vmlinuz-5.0.15-1-pve
+        initrd   /env/EXAMPLE/5.0.15-1-pve/initrd.img-5.0.15-1-pve
+        linux    /env/EXAMPLE/5.0.18-1-pve/vmlinuz-5.0.18-1-pve
+        initrd   /env/EXAMPLE/5.0.18-1-pve/initrd.img-5.0.18-1-pve
+      #+end_example
+
+      At this point all that's left is to reboot and check if
+      everything works. And it does indeed:
+
+      [[./img/bootenvironments.png]]
+
+*** Conclusion and Future Work
+    We've done it! It works and lets face it, it is an amazing feature,
+    we all want to have this on our Hypervisors.
+
+    But let's not forget that what we've done here is pretty much to
+    write down two Proofs of Concepts. In order to make sure
+    everything works nicely we probably need to at least add a bunch
+    of checks.
+
+    From my point of view there's basically two ways all of this could
+    go forward:
+    1. The =zedenv= project adopts support for the Proxmox platform by
+       relaxing their assumption that the EFI Systems Partition has to
+       be mounted and writes a bunch of gluecode around the Proxmox
+       tooling.
+    2. The Proxmox team adds native support for Boot Environments to
+       their pve-tooling. This would mean that they would have to add
+       all the functionality of a boot environment manager such as
+       =zedenv= or it's unix counterpart =beadm=, they would also have to
+       consider making EFI System Partition bigger, and the kernels and
+       boot environments wouldn't necessarily require something like
+       =rpool/be= to be stored on {{{sidenote(On the topic of not having
+       to use some intermediate storage such as =rpool/be=\, having the
+       boot environments stored additionally on zfs would enable to
+       keep the ESP relatively small and not only distinguish between
+       active and inactive boot environments\, but also between ones
+       that are loaded onto the ESP and those that are merely
+       available\, this isn't exactly what =zedenv= or =beadm= do\, but it
+       might be a nice feature to really be able to go back to older
+       version in the Enterprise context of Proxmox)}}}, but that
+       should be trivial. Also I do like the idea of templating the
+       =/etc/kernel/cmdline= file so that generating boot configurations
+       works using the included pve tooling.
+
+    Personally I think it would be great to get support for boot
+    environments directly from Proxmox, since - let's face it - it's
+    almost working out of the box anyway and a custom tool such as
+    =pve-beadm= would better fit the way Proxmox handles the boot process
+    than something that is build around it.
+
+    Anyway that's about all from me this time. I'm now a few days into
+    my little venture of 'just installing Proxmox because it will work
+    out of the box which will save me some time' and I feel quite
+    confident that I've almost reached the stage where I'm actually
+    done with installing the host system and can start running some
+    guests. There's literally only one or two things left to try out..
+
+    If anyone at Proxmox reads this, you guys are amazing! I haven't
+    even really finished my first install yet and I'm hooked with your
+    system!
