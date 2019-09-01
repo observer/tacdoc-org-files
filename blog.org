@@ -1189,21 +1189,21 @@
      size, so we can currently store about 10 different kernels at a
      time.
 
-     If we want to increase the size of the ESP however we might be out
-     of luck, since ZFS does not like to shrink, so if you're in the
-     situation of setting up a fresh Proxmox host, you might want to
-     plug in a USB Stick (with less storage than your drives) or
-     something similiar and create a mirrored ZFS RAID1 with this
-     device and the other two drives which you really want to use for
-     storage. This way the size of the resulting ZFS partition will be
-     smaller than the drives you actually use and after the initial
-     installation you can just:
-     1. Remove the small drive from =rpool=
-     2. Remove the first normal drive from =rpool=, delete the ZFS
-        partition, increase the size of the ESP to whatever you want,
-        recreate a ZFS partition and readd it to =rpool=
-     3. wait until =rpool= has resilvered the drive
-     4. repeat 2. and 3. with your second drive.
+     If we want to increase the size of the ESP however we might be
+     out of luck, since ZFS does not like to shrink, so if you're in
+     the situation of setting up a fresh Proxmox host, you can just
+     set up the size of the ZFS partition in the advanced options in
+     the installer +you might want+ +to plug in a USB Stick (with less
+     storage than your drives) or+ +something similiar and create a
+     mirrored ZFS RAID1 with this+ +device and the other two drives
+     which you really want to use for+ +storage+. This way the size of
+     the resulting ZFS partition will be smaller than the drives you
+     actually use and after the initial installation you can just:
+     1. Remove the first drive from =rpool=, delete the ZFS partition,
+        increase the size of the ESP to whatever you want, recreate a
+        ZFS partition and readd it to =rpool=
+     2. wait until =rpool= has resilvered the drive
+     3. repeat this with your second drive.
 **** =zedenv=: A Boot Environment Manager
      Now lets install =zedenv= {{{sidenote(Be sure to read the
      [[https://zedenv.readthedocs.io][documentation]] at some point in time. Also check out [[https://ramsdenj.com][John Ramsdens
