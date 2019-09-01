@@ -967,14 +967,14 @@
      our boot environments either.
 
      So lets take =/var/lib/vz= out of =rpool/root/pve-1=, first create a
-     new zvol:
+     new dataset:
      #+begin_example bash
        root@caliban:/var/lib# zfs create -o mountpoint=/var/lib/vz rpool/vz
        cannot mount '/var/lib/vz': directory is not empty
      #+end_example
 
      Then move over the content of =/var/lib/vz= into the newly created
-     and not yet mounted zvol:
+     and not yet mounted dataset:
      #+begin_example bash
        mv /var/lib/vz/ vz.old/ && zfs mount rpool/vz && mv vz.old/* /var/lib/vz/ && rmdir vz.old
      #+end_example
@@ -1004,7 +1004,7 @@
      Also there are some other directories we might want to
      exclude. There is for example =/tmp= as well as =/var/tmp/= which
      shouldn't include anything that is worth keeping, but which of
-     course would be snapshotted as well, we can create zvols for them
+     course would be snapshotted as well, we can create datasets for them
      as well and they should be automounted on reboot:
      #+begin_example bash
       zfs create -o mountpoint=/tmp     rpool/tmp
