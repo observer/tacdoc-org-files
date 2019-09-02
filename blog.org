@@ -435,7 +435,7 @@
       zpool detach rpool ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3
       cryptsetup luksFormat /dev/disk/by-id/ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3
       cryptsetup luksOpen /dev/disk/by-id/ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3 cryptrpool1
-      zpool attach rpool ata-Samsung_SSD_850_EVO_500GB_XXXXXXXXXXXXXXX-part3 cryptrpool1
+      zpool attach rpool ata-WDC_WDS500G2B0A-XXXXXX_XXXXXXXXXXXX-part3 cryptrpool1
     #+end_src
 
     Wait until the =scan= line of =zpool status= displays that the drive
