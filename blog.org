@@ -94,6 +94,25 @@
    use [[https://www.gnu.org/software/emacs/][emacs]] to write this content using the amazing [[https://orgmode.org/][org]] file format,
    [[https://github.com/kaushalmodi/ox-hugo][ox-hugo]] to export the content into whatever file structure [[https://gohugo.io][hugo]]
    uses to generate this statically linked site.
+**** Contact
+     If you would like to contact me, you can always send me an
+     email, which I check from time to time.
+
+     Since I'm a bit afraid of bots sending me loads of spam you'll
+     have to solve a very very simple riddle in order to find out the
+     address.
+
+     The beginning of the mail address consists of two words which are
+     separated by a hyphen character (-).
+
+     This is how you find these two words (including the hyphen):
+     - at the top left of any site of this blog. 
+     - if you are looking at the page source or the rss page of this
+       blog look between =<title>= and =</title>=.
+     - alternatively you can also look at the name of the github user,
+       which uploads these posts to find out.
+
+     The address ends with an =@=, which is then followed by =tuta.io=.
 **** Disclaimer
      As far as I understand there might be a few things that I am
      obliged to mention, so here they are:
@@ -334,6 +353,10 @@
    not sure if the pve tooling still works if you replace systemd-boot
    with grub\, which seems to be the common solution to setting up
    this kind of setup\,maybe it does)}}}.
+
+   Update: This post has been translated into czech language and was
+   published on [[https://www.abclinuxu.cz/clanky/sifrovany-proxmox-ve-6-zfs-luks-systemd-boot-a-dropbear][abclinuxu.cz]]. 
+
 *** Overview
     We are going to do the following:
     1. Install Proxmox VE 6 on our machine
@@ -576,7 +599,7 @@
       Host unlock_caliban
         Hostname 1.2.3.4
         User root
-        Port 2222
+        Port 12345
 
       Host caliban
         Hostname 1.2.3.4
@@ -1769,3 +1792,576 @@
     If anyone at Proxmox reads this, you guys are amazing! I haven't
     even really finished my first install yet and I'm hooked with your
     system!
+** Introducing a Boot Environment Manager for Proxmox
+   :PROPERTIES:
+   :EXPORT_FILE_NAME: a-boot-environment-manager-for-proxmox
+   :EXPORT_HUGO_TAGS: proxmox zfs systemd-boot "boot environments"
+   :EXPORT_HUGO_CODE_FENCE: t
+   :EXPORT_HUGO_CUSTOM_FRONT_MATTER: :date "\"2019-10-06\""
+   :END:
+
+ This post introduces a fork of the FreeBSD =beadm= utility which can be
+ used to manage Boot Environments on Proxmox ZFS Installations.
+
+ In this Post I will showcase how to use the =beadm= Boot Environment
+ manager in Proxmox. After the showcase there are some notes on what I
+ did to make =beadm= run on Linux in general and finally a part about
+ what has been changed in order to make =beadm= work with Proxmox
+ specifically.
+
+ The version of beadm that is compatible with Proxmox can be found
+ [[https://github.com/tactical-documentation/beadm][on github]].
+
+*** Overview 
+  - Introduction
+  - Managing Boot Environments in Proxmox
+  - Making =beadm= work under Linux
+  - Making =beadm= work with Proxmox
+  - Conclusion and Further Work
+*** Introduction
+  In my [[https://tactical-documentation.github.io/post/poc-proxmox-and-boot-environments/][previous post]] I've already outlined how boot environments work
+  in general, how you can make them work under Proxmox VE 6 and
+  presented a Proof of Concept solution of how they can be set up
+  programmatically using =zedenv=, a python-based manager for Boot
+  Environments.
+
+  Since my last post I've taken a bit of a closer look at both the
+  code of =zedenv= as well as =beadm= and decided to fork the latter and
+  make it work with Proxmox.
+
+  While this is still a Proof of Concept, it can be simply plugged
+  into an existing Proxmox ZFS installation in order to enable and
+  manage Boot Environments.
+
+  As with the previous PoC, I've written the code in such a way that no
+  parts of Proxmox have been changed. Apart from some additional files
+  that are created, your system stays as it is, also all Boot Entries
+  created by Proxmox are still available in parallel to the Boot
+  Environment entries in your bootloader.
+
+  {{{marginnote(Since the last post I've simply reinstalled Proxmox
+  with 10GB ESPs on both of my system drives\, so I have enough space
+  to store more Boot Environments. In order to install with a bigger
+  ESP\, install the system with custom (smaller) ZFS partition size\,
+  then after the installation\, remove a drive from your ZFS pool\,
+  delete the ZFS partition\, resize the ESP\, create a new ZFS
+  partition\, add it back to the pool\, resilver and repeat these
+  steps for the second drive.)}}}
+
+*** Managing Boot Environments in Proxmox
+
+    In order to use =beadm= with Proxmox you can [[https://github.com/tactical-documentation/beadm][grab a copy from
+    github]], make it executable and start using it right away. I do
+    strongly encurage you to either use a test installation or look at
+    the code and read through this post and the
+    [[https://tactical-documentation.github.io/post/poc-proxmox-and-boot-environments/][previous
+    one]] first, so you know what is going on.
+
+    On the first run you'll see the following error message, read it,
+    create the template file and you are good to go (also remember that
+    from now on, any changes to the =cmdline= file should be made to the
+    template file instead, because the =cmdline= file will be
+    autogenerated):
+    #+begin_example bash
+      root@caliban:~# ./beadm
+      ERROR: /etc/kernel/cmdline.template not found!
+
+      You need a template file for the kernel commandline.
+      The template file has to be identical to the /etc/kernel/cmdline file, but instead of a specific root it must contain the string "__BE_NAME"
+      The template file is used in order to create a valid kernel commandline for systemd-boot, which points to the correct boot environment.
+
+      In order to use beadm, create a valid /etc/kernel/cmdline.template
+ 
+      Example: if your /etc/kernel/cmdline looks like this:
+               root=ZFS=rpool/ROOT/pve-1 boot=zfs
+               then the template file should contain:
+               root=ZFS=rpool/ROOT/__BE_NAME boot=zfs
+    #+end_example
+
+    After that you can list your boot environments with:
+    #+begin_example bash
+      root@caliban:~# ./beadm list
+
+      Boot Environments on caliban:
+      name                 state      used       ds      snaps    ubrr    refs    creation date                  origin    
+      ----                 -----      ----       --      -----    ----    ----    ---------------------          ------    
+      pve-1                NR         1.20G      1.15G   44.8M    0B      1.15G   Sun Sep  1 17:08 2019          -      
+    #+end_example
+  
+    At this point you don't have a =pve-1= Boot Environment, because the
+    file structure of the ESPs is currently just pointing to the default
+    Proxmox config. For the =pve-1= dataset (or any dataset you create by
+    hand) we can create the necessary files with the =init= command:
+    #+begin_example bash
+      root@caliban:~# ./beadm init pve-1
+      Boot Environment for pve-1 has been generated successfully!
+    #+end_example
+
+    Now you can create a new Boot Environment using =create=:
+    #+begin_example bash
+      root@caliban:~# ./beadm init pve-2
+      Running hook script 'pve-auto-removal'..
+      Running hook script 'zz-pve-efiboot'..
+      Re-executing '/etc/kernel/postinst.d/zz-pve-efiboot' in new private mount namespace..
+      Copying and configuring kernels on /dev/disk/by-uuid/XXXX-XXXX
+              Copying kernel and creating boot-entry for 5.0.15-1-pve
+              Copying kernel and creating boot-entry for 5.0.21-1-pve
+      Copying and configuring kernels on /dev/disk/by-uuid/YYYY-YYYY
+              Copying kernel and creating boot-entry for 5.0.15-1-pve
+              Copying kernel and creating boot-entry for 5.0.21-1-pve
+      Created successfully
+    #+end_example
+  
+    Now we have a second Boot Environment, but it is not active. As you
+    can see right now (=N=) =pve-1= is active and after the next reboot (=R=)
+    =pve-1= will be active again:
+    #+begin_example bash
+      root@caliban:~# ./beadm list
+      Boot Environments on caliban:
+      name                 state      used       ds      snaps    ubrr    refs    creation date                  origin    
+      ----                 -----      ----       --      -----    ----    ----    ---------------------          ------    
+      pve-1                NR         1.20G      1.15G   44.8M    0B      1.15G   Sun Sep  1 17:08 2019          -         
+      pve-2                -          8K         8K      0B       0B      1.15G   Sun Oct  6 14:12 2019          rpool/ROOT/pve-1@2019-10-06-11:36:14
+    #+end_example
+
+    In order to activate the Boot Environment, run:
+    #+begin_example bash
+      root@caliban:~# ./beadm activate pve-2
+      pve-2 has been activated successfully
+    #+end_example
+
+    Now you can see that the Boot Environment will be active after a reboot:
+    #+begin_example bash
+      root@caliban:~# ./beadm list
+      Boot Environments on caliban:
+      name                 state      used       ds      snaps    ubrr    refs    creation date                  origin    
+      ----                 -----      ----       --      -----    ----    ----    ---------------------          ------    
+      pve-1                N          1.20G      1.15G   44.8M    0B      1.15G   Sun Sep  1 17:08 2019          -         
+      pve-2                R          8K         8K      0B       0B      1.15G   Sun Oct  6 14:12 2019          rpool/ROOT/pve-1@2019-10-06-11:36:14
+    #+end_example
+
+    If you don't like the name, you can rename =pve-2= with:
+    #+begin_example bash
+      root@caliban:~# ./beadm rename pve-2 pve-002
+      root@caliban:~# ./beadm list
+      Boot Environments on caliban:
+      name                 state      used       ds      snaps    ubrr    refs    creation date                  origin    
+      ----                 -----      ----       --      -----    ----    ----    ---------------------          ------    
+      pve-1                N          1.20G      1.15G   44.8M    0B      1.15G   Sun Sep  1 17:08 2019          -         
+      pve-002              R          8K         8K      0B       0B      1.15G   Sun Oct  6 14:12 2019          rpool/ROOT/pve-1@2019-10-06-11:36:14
+    #+end_example
+
+    You can also mount Boot Environments:
+    #+begin_example bash
+      root@caliban:~# ls
+      beadm
+      root@caliban:~# ./beadm mount pve-002 mountpoint
+      Mounted successfully on 'mountpoint'
+      root@caliban:~# ls
+      beadm  mountpoint
+      root@caliban:~# ls mountpoint/
+      bin  boot  dev  etc  home  lib  lib32  lib64  libx32  media  mnt  opt  proc  root  rpool  run  sbin  srv  sys  tmp  usr  var
+      root@caliban:~# ./beadm umount pve-002
+      Unmounted successfully
+      root@caliban:~# ls
+      beadm  mountpoint
+      root@caliban:~# rmdir mountpoint
+    #+end_example
+
+    If you reboot, you should be booting into the active Boot
+    Environment. Install something (e.g. =htop=), open it, then use
+    =beadm= to activate the previous Boot Environment, reboot and notice
+    how the program you've just installed has dissapeared, because you
+    just went back in time.
+
+    If you plan on setting up your Proxmox host with Boot
+    Environments, don't forget to make sure you have your ZFS datasets
+    set up properly, I've written about that in my [[https://tactical-documentation.github.io/post/poc-proxmox-and-boot-environments/][previous post]].
+*** Making =beadm= work under Linux
+    This part contains notes about which parts of the original =beadm= I
+    changed to make it work on linux. You can skip this part if you
+    don't care about the details that are not specific to Proxmox.
+
+    =beadm= is originally a Boot Environment manager for FreeBSD by
+    [[https://vermaden.wordpress.com/][vermaden]]. It is written in shell and enables you to create new Boot
+    Environments or create them from ZFS snapshots, to activate, rename
+    or destroy Boot Environments, list them and also mount and unmount
+    them:
+    #+begin_example sh
+      root@caliban:~# beadm 
+      usage:
+        beadm activate <beName>
+        beadm create [-e nonActiveBe | -e beName@snapshot] <beName>
+        beadm create <beName@snapshot>
+        beadm destroy [-F] <beName | beName@snapshot>
+        beadm list [-a] [-s] [-D] [-H]
+        beadm rename <origBeName> <newBeName>
+        beadm mount <beName> [mountpoint]
+        beadm { umount | unmount } [-f] <beName>
+        beadm version
+    #+end_example
+
+    The script was originally about 900 LOC long and consisted of a
+    bunch of helper functions followed by a big case statement, which
+    takes care of running the code specific to the supplied
+    parameter. 
+
+    After applying the following changes, apart from setting up the boot
+    loader specific stuff, =beadm= should work on linux:
+**** Removing the bootloader specific code
+    Apart from managing the ZFS part it also takes care of managing
+    FreeBSDs own bootloader or optionally =grub2=. I basically just
+    removed these FreeBSD specific parts.
+**** Replacing the =awk= code of the =list= command
+    The =list= section of the script also contains a rather large piece of
+    awk code for displaying the available/active Boot Environments. I've
+    replaced this part with shell, because I'm not yet familiar enough
+    with awk to use it inside of a script. Therefore the new =list=
+    command is probably a bit simpler than it's FreeBSD parent. I also
+    made sure that the correct next boot environment is marked, by
+    looking into the content of =/etc/kernel/cmdline=.
+**** Replace FreeBSD =date= with it's Linux counterpart
+    For the =destroy= operation I had to replace the line containing the
+    =date= command, since FreeBSDs =date= supports the -f option, while the
+    linux =date= command does not.
+**** Missing =-u= Parameter in the Linux ZFS Implementation
+    The =rename= operation uses the =zfs rename= with the =-u= parameter. This
+    parameter does not exist in linux and according to the FreeBSD
+    man-page, it makes sure that filesystems are not remounted during
+    the rename operation:
+    #+begin_example
+      -u	     Do	not remount file systems during	rename.	If a file system's
+              mountpoint	property is set	to legacy or none, file	system is not
+              unmounted even if this option is not given.
+    #+end_example
+  
+**** Mounting ZFS datasets under Linux
+    In order to make the =mount= operation work, the =-o zfsutil= option had
+    to be applied to the =zfs mount= command.
+**** ZFS automount with systemd
+    As I worked on the linux version of beadm, I also noticed that apart
+    from making sure all the ESPs are working as intended, when booting
+    into a new Boot environment, only =/= was mounted.
+
+    This was due to the systemd =zfs-mount= service not running. This
+    service makes sure that all the zfs datasets are mounted on boot,
+    but was failing to execute =zfs mount -a=, because there is more than
+    one dataset that should be mounted to =/=. 
+
+    In order to fix this, we can use the =canmount= option and set it to
+    =off= for all Boot Environments:
+    #+begin_example
+      canmount=on | off | noauto
+
+      If this property is set to off, the file system cannot be mounted, and
+      is ignored by zfs mount -a. Setting this property to off is similar to
+      setting the mountpoint property to none, except that the dataset still
+      has a normal mountpoint property, which can be inherited. Setting this
+      property to off allows datasets to be used solely as a mechanism to
+      inherit properties. One example of setting canmount=off is to have two
+      datasets with the same mountpoint, so that the children of both
+      datasets appear in the same directory, but might have different
+      inherited characteristics.  When the noauto option is set, a dataset
+      can only be mounted and unmounted explicitly. The dataset is not
+      mounted automatically when the dataset is created or imported, nor is
+      it mounted by the zfs mount -a command or unmounted by the zfs unmount
+      -a command.
+
+      This property is not inherited.
+  #+end_example
+*** Making =beadm= work with Proxmox
+
+    This part describes the changes I made to =beadm= that were Proxmox
+    specific. 
+
+    In my last post I described that the content of the Boot
+    Environments could be housed in a ZFS dataset and then copied over
+    to the ESPs (EFI System Partitions). I only proposed this however,
+    because the amount of space boot environments need long term is
+    higher than the amount of space that is available on a default
+    Proxmox ESP and because shrinking a ZFS partition (which usually
+    fills the rest of the harddrive) is not really something ZFS does.
+
+**** Recap: How do Boot Environments work on Proxmox
+    - systemd-boot is used
+    - since there can be multiple ESPs, they are not mounted at runtime
+    - a script called =pve-efiboot-tool= is used to refresh the bootloader
+      configuration on all ESPs
+    - the =pve-efiboot-tool= calls another script =zz-pve-efiboot=, which
+      iterates over all ESPs, mounts them, updates the boot loader
+      configuration and finally unnmounts them
+    - =zz-pve-efiboot= gets its information about which ESPs exist from
+      =/etc/kernel/pve-efiboot-uuids= and the kernel commandline from
+      =/etc/kernel/cmdline=
+    - the kernel commandline contains the mountpoint for =/=, which is the
+      part of this file we need to exchange in order to activate a Boot
+      Environment
+    - In the last post I proposed the use of a template file for the
+      kernel commandline =/etc/kernel/cmdline.template=, from which the
+      =/etc/kernel/cmdline= file is generated before calling
+      =pve-efiboot-tool refresh=. We will be using such a file here.
+    - On the ESPs we need to create a directory structure housing the
+      Boot Environment configuration files
+**** Check for =/etc/kernel/cmdline.template=
+     We need to make sure that the =beadm= script fails if no
+     =/etc/kernel/cmdline.template= is found or if it is found, but does
+     not contain the correct string ("__BE_NAME"), which we replace to
+     create the =cmdline= file.
+
+     #+begin_example sh
+
+       if [ ! -f /etc/kernel/cmdline.template ] || ! $(grep -q "__BE_NAME" /etc/kernel/cmdline.template)
+       then
+         echo "ERROR: /etc/kernel/cmdline.template not found!"
+         # [...]
+         exit 1
+       fi
+     #+end_example
+**** Temporary files
+     =beadm= usually is able to tell which Boot Environment will be active
+     after the next boot, by simply looking into the ESP or boot loader
+     configuration. Since on Proxmox the ESPs are not always mounted, we
+     keep this information inside =/tmp/beadm/=. We store a version of the
+     current =loader.conf= as well as the name of the next active boot
+     environment in /tmp/beadm so we don't have to mount/unmount ESPs
+     every time we use =list=. We do this in a helper function:
+
+     #+begin_example sh
+       __get_active_be_from_esp() {
+         if [ ! -f /tmp/beadm/loader.conf ]
+         then
+           mount /dev/disk/by-uuid/$(cat /etc/kernel/pve-efiboot-uuids | head -n 1) /boot/efi
+           mkdir -p /tmp/beadm/
+           cp /boot/efi/loader/loader.conf /tmp/beadm/loader.conf
+           default_entry="$(cat /tmp/beadm/loader.conf | grep default | cut -d ' ' -f2 | sed 's/-\*$//')"
+           next_boot_environment="$(cat /boot/efi/loader/entries/$(ls /boot/efi/loader/entries/ | \
+                                    grep $default_entry | head -n 1) | grep options | tr ' ' '\n' | \
+                                    grep root= | cut -d '/' -f3)"
+           echo $next_boot_environment > /tmp/beadm/next_boot_environment
+           # [...]
+           umount /boot/efi
+         fi
+       }
+     #+end_example
+
+**** The =init= Parameter
+     The init operation is a new operation that was added to =beadm= so a
+     manually created dataset or a dataset that has no Boot Environment
+     files on the ESP (such as the default =/rpool/ROOT/pve-1= dataset)
+     can be converted to a working Boot Environment. This command
+     basically just creates some files on the ESPs.
+
+     This one is new and quite important: use it to initialize a Boot
+     Environment for a dataset that already exists (you probably only
+     need it for =rpool/ROOT/pve-1= or whenever you've created snapshots
+     by hand), but it's nice to have.
+
+     #+begin_example sh
+       if $(zfs get canmount rpool/ROOT/$be_name | grep -q on)
+       then 
+         zfs set canmount=off ${POOL}/${BEDS}/$be_name
+       fi
+
+       __get_active_be_from_esp
+
+       # [...]
+
+       old_be_name="$(cat /etc/kernel/cmdline | tr ' ' '\n' | grep root | cut -d '/' -f3)"
+
+       cat /etc/kernel/cmdline.template | sed "s/__BE_NAME/$be_name/" > /etc/kernel/cmdline
+
+       pve-efiboot-tool refresh
+
+       cat /etc/kernel/cmdline.template | sed "s/__BE_NAME/$old_be_name/" > /etc/kernel/cmdline
+
+       for esp in $(cat /etc/kernel/pve-efiboot-uuids)
+       do
+         mount /dev/disk/by-uuid/$esp /boot/efi
+         mkdir -p /boot/efi/env/$be_name
+         cp -r /boot/efi/EFI/proxmox/* /boot/efi/env/$be_name/
+         cat /boot/efi/loader/loader.conf | sed "/default/c\default $be_name-*" > /boot/efi/env/$be_name/loader.conf
+         for entry in $(ls /boot/efi/loader/entries/ | grep proxmox-.*-pve.conf)
+         do
+           new_entry="$(echo $entry | sed "s/proxmox/$be_name/;s/-pve//")"
+           cp /boot/efi/loader/entries/$entry /boot/efi/loader/entries/$new_entry
+           sed -i "s/EFI/env/" /boot/efi/loader/entries/$new_entry
+           sed -i "s/proxmox/$be_name/" /boot/efi/loader/entries/$new_entry
+           sed -i "s/Proxmox Virtual Environment/$be_name/" /boot/efi/loader/entries/$new_entry 
+         done
+         rm -f /boot/efi/loader/loader.conf
+         cp /tmp/beadm/loader.conf /boot/efi/loader/loader.conf
+         umount /boot/efi
+       done
+     #+end_example
+**** The =list= Parameter
+     We check if we find a file containing the loader.conf in /tmp, if
+     not we mount a ESP and copy loader.conf to /tmp, unmount the ESP
+     and use this file to store the name of the next active BE. Apart
+     from that, we can just create some output containing basically the
+     same information as the original =beadm list= produces:
+
+     #+begin_example sh
+       zfs_list="$(zfs list -H -t filesystem,snapshot,volume -s creation -o name,used,usedds,usedbysnapshots,usedrefreserv,refer,creation,origin -r $POOL/$BEDS | grep "^$POOL/$BEDS/" | sed 's/\t/,/g;s/\n/;/g;s/ /_/g')"
+
+       __get_active_be_from_esp
+
+       printf "%-20s %-10s %-10s %-7s %-8s %-7s %-7s %-30s %-10s\n" name state used ds snaps ubrr refs "creation date" origin
+       printf "%-20s %-10s %-10s %-7s %-8s %-7s %-7s %-30s %-10s\n" ---- ----- ---- -- ----- ---- ---- --------------------- ------
+       for line in $(echo $zfs_list | tr ';' '\n'); do
+         BE_NAME="$(echo $line | cut -d ',' -f1 | sed "s/^$POOL\/$BEDS\///")"
+         BE_ACTIVE="$(if [ "$ROOTFS" = "$(echo $line | cut -d ',' -f1)" ]; then echo N; else echo ' '; fi)"
+         BE_NEXT="$(if [ "$BE_NAME" = "$(cat /tmp/beadm/next_boot_environment)" ]; then echo R; else echo ' '; fi)"
+         BE_STATE="$(if [ "$BE_ACTIVE$BE_NEXT" = "  " ]; then echo "-"; else echo "$BE_ACTIVE$BE_NEXT"; fi)"
+         BE_USED="$(echo $line | cut -d ',' -f2)"
+         BE_USEDDS="$(echo $line | cut -d ',' -f3)"
+         BE_USEDBYSNAPSHOTS="$(echo $line | cut -d ',' -f4)"
+         BE_USEDREFRESERV="$(echo $line | cut -d ',' -f5)"
+         BE_REFER="$(echo $line | cut -d ',' -f6)"
+         BE_DATE="$(echo $line | cut -d ',' -f7 | sed 's/_/ /g')"
+         BE_ORIGIN="$(echo $line | cut -d ',' -f8)"
+
+
+         if ! echo $line | cut -d ',' -f 1 | grep -q "@"; then
+           printf "%-20s %-10s %-10s %-7s %-8s %-7s %-7s %-30s %-10s\n" $BE_NAME $BE_STATE $BE_USED $BE_USEDDS $BE_USEDBYSNAPSHOTS $BE_USEDREFRESERV $BE_REFER "$BE_DATE" "$BE_ORIGIN"
+         fi 
+       done
+     #+end_example
+**** The =create= Parameter
+     The =create= operation is used to create a new bootable
+     dataset. After the operation the newly created Boot Environment is
+     not active.
+
+     In order to make this operation work with Proxmox, first we need to
+     grab a copy of the currently active Boot Environment from one ESP
+     and store it in =/tmp/beadm=. 
+
+     Then we create a new =/etc/kernel/cmdline= from the template file and
+     run =pve-efiboot-tool refresh=, which creates a valid bootloader
+     configuration on all of our ESPs. Next we copy the kernel files
+     into $ESP/env/$BE_NAME, rename all the conf files and restore the
+     previous loader.conf that we saved in =/tmp/beadm/loader.conf=. This
+     way we can create a new Boot Environment without activating it.
+
+     #+begin_example sh
+       zfs set canmount=off ${POOL}/${BEDS}/$be_name
+
+       __get_active_be_from_esp
+
+       old_be_name="$(cat /etc/kernel/cmdline | tr ' ' '\n' | grep root | cut -d '/' -f3)"
+       cat /etc/kernel/cmdline.template | sed "s/__BE_NAME/$be_name/" > /etc/kernel/cmdline
+       pve-efiboot-tool refresh
+       cat /etc/kernel/cmdline.template | sed "s/__BE_NAME/$old_be_name/" > /etc/kernel/cmdline
+
+       for esp in $(cat /etc/kernel/pve-efiboot-uuids)
+       do
+         mount /dev/disk/by-uuid/$esp /boot/efi
+         mkdir -p /boot/efi/env/$be_name
+         cp -r /boot/efi/EFI/proxmox/* /boot/efi/env/$be_name/
+         cat /boot/efi/loader/loader.conf | sed "/default/c\default $be_name-*" > /boot/efi/env/$be_name/loader.conf
+         for entry in $(ls /boot/efi/loader/entries/ | grep proxmox-.*-pve.conf)
+         do
+           new_entry="$(echo $entry | sed "s/proxmox/$be_name/;s/-pve//")"
+           cp /boot/efi/loader/entries/$entry /boot/efi/loader/entries/$new_entry
+           sed -i "s/EFI/env/" /boot/efi/loader/entries/$new_entry
+           sed -i "s/proxmox/$be_name/" /boot/efi/loader/entries/$new_entry
+           sed -i "s/Proxmox Virtual Environment/$be_name/" /boot/efi/loader/entries/$new_entry 
+         done
+         rm /boot/efi/loader/loader.conf
+         cp /tmp/beadm/loader.conf /boot/efi/loader/loader.conf
+         umount /boot/efi
+       done
+     #+end_example
+**** The =activate= Parameter
+     Here we activate a Boot Environment, that has already been created,
+     so we only need to mount all the ESPs and copy the correct conf
+     file so it replaces the loader.conf. We also need to write the name
+     of the active Boot Environment to =/tmp/beadm=.
+
+     #+begin_example sh
+       for esp in $(cat /etc/kernel/pve-efiboot-uuids)
+       do
+         mount /dev/disk/by-uuid/$esp /boot/efi
+         rm -f /boot/efi/loader/loader.conf
+
+         # [...]
+
+         cp /boot/efi/env/$be_name/loader.conf /boot/efi/loader/loader.conf
+
+         umount /boot/efi
+       done
+     #+end_example
+**** The =rename= Parameter
+     Here, we need to rename the folder inside the =env= directory as well
+     as the conf files in the entries directory. We also have to make
+     sure they point to the new directory.
+     #+begin_example sh
+       for esp in $(cat /etc/kernel/pve-efiboot-uuids)
+       do
+         mount /dev/disk/by-uuid/$esp /boot/efi
+         mv /boot/efi/env/$be_name/ /boot/efi/env/$new_be_name/
+         sed -i "s/$be_name/$new_be_name/" /boot/efi/env/$new_be_name/loader.conf
+         sed -i "s/$be_name/$new_be_name/" /boot/efi/loader/loader.conf
+         for entry in $(ls /boot/efi/loader/entries/ | grep $be_name)
+         do 
+           sed -i "s/$be_name/$new_be_name/" /boot/efi/loader/entries/$entry
+           new_entry_name=$(echo $entry | sed "s/$be_name/$new_be_name/")
+           mv /boot/efi/loader/entries/$entry /boot/efi/loader/entries/$new_entry_name
+         done
+         umount /boot/efi
+       done
+     #+end_example
+**** The =destroy= Parameter
+     We need to delete the content of the =env= directory as well as the
+     config files.
+
+     #+begin_example sh
+       for esp in $(cat /etc/kernel/pve-efiboot-uuids)
+       do
+         mount /dev/disk/by-uuid/$esp /boot/efi
+         rm -rf /boot/efi/env/$be_name/
+         for entry in $(ls /boot/efi/loader/entries/ | grep $be_name)
+         do 
+           rm -f /boot/efi/loader/entries/$entry
+         done
+         umount /boot/efi
+       done
+     #+end_example
+*** Conclusion and Further Work
+
+    This post has introduced =beadm=, a Boot Environment Manager for the
+    Proxmox Virtualization Plattform, which has been forked from it's
+    FreeBSD counterpart. First the usage of =beadm= is showcased, then
+    some notes on porting =beadm= from FreeBSD to Linux are presented
+    and finally the Proxmox specific additions to =beadm= are explained.
+
+    The way =beadm= is implemented in this post could partially be
+    considered bad design, however this is due to =beadm= being an
+    external tool and not part of the native Proxmox tooling. The scope
+    of this was to implement Boot Environments without changing the
+    Proxmox code. I'm sure the design will be improved if this
+    functionality is added to Proxmox. The following Improvements can be
+    made:
+    - deduplication of kernel files (Reference counting could help to
+      manage this)
+    - minimize the amount of mount / unmount operations
+    - add the ability to inject kernels into Boot Environments
+    - add the ability to prune kernels from Boot Environments
+    - add the ability to export / import Boot Environments together with
+      the relevant files from the ESPs
+
+    Now that Boot Environments on Proxmox (or more general on Linux) are
+    a possibility, the next thing to do could be to write up how Boot
+    Environments can be used in practice. For now the following
+    scenarios, which could be interesting come to mind:
+    - Update systems using a new Boot Environment using =chroot=
+    - Migrate systems by moving Boot Environments
+    - Use a copy of a system in order to do forensic work
+    - Find out what has changed between two system states by comparing
+      the filesystem snapshots
+    - Use the same "base" Boot Environment to run on multiple bare metal
+      / virtualized machines, make an update on the base Environment,
+      then push it out to multiple systems.
+    - Rollbacks in case of system failure: Reduce MTTR on bare metal systems
+    
+
+ 
